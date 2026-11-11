@@ -3,7 +3,7 @@
 
   python make_music_packs.py SETS_FOLDER [--out build] [--kbps 96]
 
-SETS_FOLDER holds the audio files, with any names. A file whose name is a DJ's id or name from lineup.json, or contains it ("DxBuddha - final mix.mp3"),
+SETS_FOLDER holds the audio files, with any names. A file whose name is a DJ's id or name from lineup.json, or starts or ends with it ("DxBuddha - final mix.mp3"),
 is that DJ's set and starts on the DJ's time. Every other file becomes a test set ("Test: <file name>") that never starts by itself: /wubmusic start <id> 0.
 It writes into --out:
   WubmasMusic-java.zip       the Java resource pack (the server hands it to Java players)
@@ -226,7 +226,7 @@ def sha1(p):
 
 # ------------------------------------------------------------------ main
 def set_id_for(p):
-    sid = re.sub(r"[^a-z0-9_]+", "_", p.stem.lower().strip()).strip("_")
+    sid = re.sub(r"_+", "_", re.sub(r"[^a-z0-9_]+", "_", p.stem.lower().strip())).strip("_")
     return sid
 
 
@@ -239,7 +239,8 @@ def name_key(text):
 
 
 def match_files(files, lineup):
-    """Decides which file is which DJ's set. A file is a DJ's when its name is the DJ's id or name (any capitals, spaces, dots or dashes), or contains it ('DxBuddha - Wubmas mix FINAL.mp3').
+    """Decides which file is which DJ's set. A file is a DJ's when its name is the DJ's id or name (any capitals, spaces, dots or dashes), or starts or ends with it ('DxBuddha - Wubmas mix FINAL.mp3', 'Wubmas set - Gnarlie.wav').
+    A name in the middle does not count: 'Artist - Song (INFRNO Remix)' is a song that credits INFRNO, not INFRNO's set.
     Anything else is a test set. A file that could be two DJs', or a DJ with two competing files, is never given a time slot: it becomes a test set and the report says so.
     Returns (assigned {lineup id: (file, how)}, tests [file], warnings [text])."""
     keys = {e["id"]: {k for k in (name_key(e["id"]), name_key(e["name"])) if k} for e in lineup}
@@ -248,7 +249,7 @@ def match_files(files, lineup):
         k = name_key(p.stem)
         ex = [i for i, ks in keys.items() if k in ks]
         if ex: exact.setdefault(ex[0], []).append(p); continue
-        pt = [i for i, ks in keys.items() if any(len(x) >= 5 and x in k for x in ks)]
+        pt = [i for i, ks in keys.items() if any(len(x) >= 5 and (k.startswith(x) or k.endswith(x)) for x in ks)]
         if len(pt) == 1: part.setdefault(pt[0], []).append(p)
         elif len(pt) > 1:
             warnings.append(f"{p.name} could be any of {', '.join(pt)}, so it is a test set and not on anyone's time slot. Rename it after one DJ.")
@@ -262,7 +263,7 @@ def match_files(files, lineup):
             for p in pt: tests.append(p); warnings.append(f"{p.name} also looks like {i}'s, but {e[0].name} is the file used for {i}. {p.name} is a test set.")
         elif len(e) > 1:
             tests += e + pt; warnings.append(f"{i} has more than one file ({', '.join(p.name for p in e + pt)}). None of them has the {i} time slot, so {i} has no music. Delete the extra ones in the draft release.")
-        elif len(pt) == 1: assigned[i] = (pt[0], "its name is in the file name")
+        elif len(pt) == 1: assigned[i] = (pt[0], "its name starts or ends the file name")
         elif len(pt) > 1:
             tests += pt; warnings.append(f"{i} has more than one file ({', '.join(p.name for p in pt)}). None of them has the {i} time slot, so {i} has no music. Delete the extra ones in the draft release.")
     import difflib
@@ -282,7 +283,7 @@ def test_set_for(p, taken):
     return {"id": sid, "name": f"Test: {pretty}" if pretty else f"Test: {sid}", "start": TEST_START, "test": True}
 
 
-def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, normalize=True, lineup_file=None, source="record", cap_mb=250, tail_min=2.0, end_fade=1.0, extra_lineup=None, quiet=False, demo=False, pack_url="", bedrock_url="", version=None, strict_ids=False):
+def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, normalize=True, lineup_file=None, source="record", cap_mb=250, tail_min=2.0, end_fade=1.0, extra_lineup=None, quiet=False, demo=False, pack_url="", bedrock_url="", version=None, strict_ids=False, short_min=10.0):
     sets_dir = Path(sets_dir); out = Path(out)
     if pack_url and not re.fullmatch(r"https?://[\x21-\x7e]{3,2000}", pack_url): raise ToolError(f"--pack-url must be a web address that starts with https:// and has no spaces or accents (got {pack_url!r}).")
     if bedrock_url and not re.fullmatch(r"https?://[\x21-\x7e]{3,2000}", bedrock_url): raise ToolError(f"--bedrock-url must be a web address that starts with https:// and has no spaces or accents (got {bedrock_url!r}).")
@@ -336,7 +337,7 @@ def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, 
         jsha = sha1(jp)
         write_config(out / "config.yml", HERE / "config-template.yml", lineup, built, source, piece, overlap, pack_url, jsha)
         if pack_url: write_library(out / "library.yml", lineup, built, piece, overlap, pack_url, jsha, bedrock_url, sha1(bp) if bedrock_url else "", bp.stat().st_size if bedrock_url else 0, version)
-        write_report(out / "REPORT.txt", sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs if normalize else None, lineup, pack_url, file_notes, file_warnings)
+        write_report(out / "REPORT.txt", sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs if normalize else None, lineup, pack_url, file_notes, file_warnings, 0 if demo else short_min)
         write_server_files(out, bp)
         return {"sets": sets, "java": jp, "bedrock": bp, "events": len(sounds), "version": version, "java_mb": jp.stat().st_size / 1e6, "bedrock_mb": bp.stat().st_size / 1e6, "lineup": lineup}
     finally:
@@ -362,16 +363,18 @@ def parse_start(t):
     return None
 
 
-def write_report(path, sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs, lineup=(), pack_url="", file_notes=(), file_warnings=()):
-    L = [f"WUBMAS MUSIC - build {version}", "", f"{'set':<16}{'file':<24}{'length':>8}{'pieces':>8}{'size':>9}   loudness (before -> after)"]
+def write_report(path, sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs, lineup=(), pack_url="", file_notes=(), file_warnings=(), short_min=10.0):
+    wid = max([16] + [len(s["id"]) + 2 for s in sets] + [len(n[0]) + 2 for n in file_notes])
+    L = [f"WUBMAS MUSIC - build {version}", "", f"{'set':<{wid}}{'file':<24}{'length':>8}{'pieces':>8}{'size':>9}   loudness (before -> after)"]
     warnings = list(file_warnings)
+    is_test = {e["id"]: bool(e.get("test")) for e in lineup}
     for s in sets:
         st = s["stats"]
         loud = f"{st['input_i']:.1f} -> {st.get('output_i', float('nan')):.1f} LUFS, peak {st.get('output_tp', float('nan')):.1f} dBTP" if st.get("normalized") else "not levelled"
-        L.append(f"{s['id']:<16}{s['source'][:22]:<24}{s['duration'] / 60:>6.1f} m{s['pieces']:>8}{s['size'] / 1e6:>7.1f} MB   {loud}")
+        L.append(f"{s['id']:<{wid}}{s['source'][:22]:<24}{s['duration'] / 60:>6.1f} m{s['pieces']:>8}{s['size'] / 1e6:>7.1f} MB   {loud}")
+        if short_min and s["id"] in is_test and not is_test[s["id"]] and s["duration"] < short_min * 60: warnings.append(f"{s['id']}: the file {s['source']} is only {s['duration'] / 60:.1f} min long. A DJ set is usually much longer, so check that it is the right file for {s['name']}.")
         target = lufs if lufs is not None else -14.0
         if st.get("normalized"):
-            if st["input_i"] > target + 8: warnings.append(f"{s['id']} was very loud ({st['input_i']:.1f} LUFS) and has been turned down a lot.")
             if st["input_i"] < target - 12: warnings.append(f"{s['id']} was very quiet ({st['input_i']:.1f} LUFS); it has been turned up a lot, so check it for noise.")
         if s["duration"] > 3 * 3600: warnings.append(f"{s['id']} is over 3 hours.")
     by_id = {s["id"]: s for s in sets}
@@ -385,7 +388,7 @@ def write_report(path, sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs
     if file_notes:
         L += ["", "Which file is which:"]
         for sid, name, fname, how in file_notes:
-            L.append(f"  {sid:<16}{name[:28]:<30}" + (f"{fname}  ({how})" if fname else "no file yet, so this set has no music"))
+            L.append(f"  {sid:<{wid}}{name[:28]:<30}" + (f"{fname}  ({how})" if fname else "no file yet, so this set has no music"))
         if any(h == "test set" for _, _, _, h in file_notes):
             L.append("  A test set is a file that is not a DJ's set. It never starts by itself: start it by hand with /wubmusic start <id> 0 (and /wubmusic stop).")
     jm, bm = jp.stat().st_size / 1e6, bp.stat().st_size / 1e6
@@ -465,6 +468,7 @@ def main(argv=None):
     ap.add_argument("--pack-url", default="", help="the web address the Java pack will be uploaded to; it goes into config.yml (with the pack's SHA-1) so there is nothing to paste in later")
     ap.add_argument("--bedrock-url", default="", help="the web address the Bedrock pack will be uploaded to (library.yml gets it with the pack's SHA-1; /wubmusic update downloads it from there into Geyser's packs folder)")
     ap.add_argument("--version", type=int, default=None, help="the Bedrock pack's version number (default: one more than the last build in the --out folder). A build server that starts from nothing every time must pass a number that only goes up, for example its run number")
+    ap.add_argument("--short-minutes", type=float, default=10.0, help="warn when a DJ's file is shorter than this many minutes, because it is probably a song and not a set (0 = never warn)")
     ap.add_argument("--strict-ids", action="store_true", help="stop with an error when a file is not one of the DJs in lineup.json (instead of making it a test set that never starts by itself)")
     ap.add_argument("--demo", action="store_true", help="build a 2 minute made-up sound check set instead of reading a folder (needs numpy)")
     a = ap.parse_args(argv)
@@ -477,7 +481,7 @@ def main(argv=None):
             tmp = tempfile.mkdtemp(prefix="wubmas_demo_"); make_demo(tmp); a.sets = tmp
         if not a.sets: ap.error("give the folder with the set files (or --demo)")
         r = build(a.sets, a.out, kbps=a.kbps, piece=a.piece, overlap=a.overlap, lufs=a.lufs, normalize=not a.no_normalize, lineup_file=a.lineup, source=a.source, cap_mb=a.cap_mb,
-                  extra_lineup=[{"id": "soundcheck", "name": "Sound check", "start": "2026-01-01 12:00"}] if a.demo else None, demo=a.demo, pack_url=a.pack_url.strip(), bedrock_url=a.bedrock_url.strip(), version=a.version, strict_ids=a.strict_ids)
+                  extra_lineup=[{"id": "soundcheck", "name": "Sound check", "start": "2026-01-01 12:00"}] if a.demo else None, demo=a.demo, pack_url=a.pack_url.strip(), bedrock_url=a.bedrock_url.strip(), version=a.version, strict_ids=a.strict_ids, short_min=a.short_minutes)
         if tmp: shutil.rmtree(tmp, ignore_errors=True)
     except ToolError as e:
         print("\nERROR: " + str(e), file=sys.stderr); return 1

@@ -23,7 +23,7 @@ GitHub's website only takes files up to 25 MB when you drop them into the reposi
 1. Releases, then **Draft a new release**.
 2. Release title: **Wubmas music files** (exactly like that; the builder looks for this name). For the tag, type any name, for example `dj-files`. It does not matter, because this release is never published.
 3. Drag the music files into the box that says to attach binaries. **Any file name works, you never have to rename anything.** The builder looks at each name:
-   - A name that has a DJ's name in it is that DJ's set, and it plays at that DJ's time. `DxBuddha.mp3`, `Yung Siete.wav`, `gnarlie final mix v2.mp3` and `INFRNO - Wubmas set.flac` all work (capitals, spaces and dashes do not matter). The names it knows are in `lineup.json` (DxBuddha, Yung Siete, Gnarlie, FRGMNTD, Voydoom B2B Moros, INFRNO, James V).
+   - A name that is, starts with or ends with a DJ's name is that DJ's set, and it plays at that DJ's time. `DxBuddha.mp3`, `Yung Siete.wav`, `gnarlie final mix v2.mp3` and `Wubmas set - INFRNO.flac` all work (capitals, spaces and dashes do not matter). A song that only has the name in the middle, like `Artist - Song (INFRNO Remix).wav`, is not the DJ's set. The names it knows are in `lineup.json` (DxBuddha, Yung Siete, Gnarlie, FRGMNTD, Voydoom B2B Moros, INFRNO, James V).
    - Any other file is a **test set**: any song, any name. It is in the lineup as "Test: <file name>" and it **never starts by itself**, so it can never play at the wrong moment. You start it by hand on the server with `/wubmusic start <id> 0` (press Tab after `start` to see the ids; the id is the file name in small letters with `_`, so `Jingle Bells.mp3` is `jingle_bells`) and stop it with `/wubmusic stop`. (Starting a test set stops whatever else is playing, so do not do it while a DJ is on.)
 
    mp3, wav, flac, ogg and m4a all work. Wait until every file's bar is full.
@@ -33,7 +33,7 @@ GitHub's website only takes files up to 25 MB when you drop them into the reposi
 
 To swap a file later, open the draft (Releases, the one marked Draft, Edit), click the cross next to the old file, drag the new one in, and Save draft again. You can add files one at a time; a DJ who has no file yet stays in the lineup and the server tells you that set has no audio.
 
-If a DJ's file has a different name than the one in `lineup.json` (a misspelling, a nickname), it becomes a test set and the DJ has no music. The build report tells you in its Warnings, and shows a "Which file is which" list, so read it once before the festival. Fix it by renaming the file in the draft, or by changing the name in `lineup.json`.
+If a DJ's file has a different name than the one in `lineup.json` (a misspelling, a nickname), it becomes a test set and the DJ has no music. The build report tells you in its Warnings, and shows a "Which file is which" list, so read it once before the festival. It also warns when a DJ's file is shorter than 10 minutes, because that is probably a song and not a set. Fix it by renaming the file in the draft, or by changing the name in `lineup.json`.
 
 ## Building
 
