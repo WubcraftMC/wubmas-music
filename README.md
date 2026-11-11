@@ -48,6 +48,7 @@ When the run has a green tick, open it. The summary at the bottom shows the **li
 - **Java players** get the new pack when they next join, or when they type `/music pack`.
 - **Bedrock players** get it from Geyser, which reads its packs when the server starts, so restart the server once after an update.
 - `/wubmusic status` shows which build is in use.
+- **The Java pack has every piece twice, as a left and a right channel.** Minecraft only fades a mono sound with the distance, so the plugin (1.7.0 or newer) plays the left channel from a left speaker and the right channel from a right speaker at the stage: walking away makes the music quieter and it stays in stereo. After the update, stand in the middle of the stage, look toward the dance floor and run `/wubmusic stage set`. Bedrock players get the stereo pieces. A build with the old single stereo sound per piece is `--java-stereo` in `tool/make_music_packs.py` (then Java players hear the same volume everywhere).
 - The build also finds the beats, bars, breaks and drops of every set and publishes them as `lights.txt` next to the packs, so the stage lights can follow the music. `/wubmusic update` brings it along; `/wubmusic lights test` tries the lights without a set. A set where no beat could be found gets no lights, and the build report says so in its Warnings.
 
 ## Changing names or times

@@ -134,8 +134,10 @@ def plan(duration, piece, tail_min):
     return n, round(n * piece, 3)
 
 
-def encode_pieces(wav_path, out_dir, set_id, piece, half, count, kbps, end_fade):
-    """Writes p0000.ogg ... for one set. Piece i covers [i*piece - half, (i+1)*piece + half] and fades in and out over 2*half so that, started 'half' early by the plugin, the overlaps add up to the original."""
+def encode_pieces(wav_path, out_dir, set_id, piece, half, count, kbps, end_fade, channel=None):
+    """Writes p0000.ogg ... for one set. Piece i covers [i*piece - half, (i+1)*piece + half] and fades in and out over 2*half so that, started 'half' early by the plugin, the overlaps add up to the original.
+    channel=None writes the stereo pieces; "l" or "r" writes the left or the right channel alone as a mono piece (p0000_l.ogg, p0000_r.ogg), for the Java pack's split layout."""
+    if channel not in (None, "l", "r"): raise ValueError("channel is None, 'l' or 'r'")
     files = []
     with wave.open(str(wav_path), "rb") as w:
         assert w.getframerate() == SR and w.getnchannels() == 2 and w.getsampwidth() == 2
@@ -151,11 +153,12 @@ def encode_pieces(wav_path, out_dir, set_id, piece, half, count, kbps, end_fade)
             if i > 0 and ramp > 0: filters.append(f"afade=t=in:st=0:d={ramp:.4f}:curve=tri")
             if i < count - 1 and ramp > 0: filters.append(f"afade=t=out:st={dur - ramp:.4f}:d={ramp:.4f}:curve=tri")
             if i == count - 1 and end_fade > 0: filters.append(f"afade=t=out:st={max(0.0, dur - end_fade):.4f}:d={min(end_fade, dur):.4f}")
+            if channel: filters.insert(0, "pan=mono|c0=c0" if channel == "l" else "pan=mono|c0=c1")
             args = ["-y", "-f", "s16le", "-ar", str(SR), "-ac", "2", "-i", "-"]
             if filters: args += ["-af", ",".join(filters)]
-            f = Path(out_dir) / set_id / f"p{i:04d}.ogg"
+            f = Path(out_dir) / set_id / (f"p{i:04d}.ogg" if not channel else f"p{i:04d}_{channel}.ogg")
             f.parent.mkdir(parents=True, exist_ok=True)
-            args += ["-c:a", "libvorbis", "-b:a", f"{kbps}k", "-ar", str(SR), "-ac", "2", "-fflags", "+bitexact", "-flags:a", "+bitexact", str(f)]
+            args += ["-c:a", "libvorbis", "-b:a", f"{kbps}k", "-ar", str(SR), "-ac", "1" if channel else "2", "-fflags", "+bitexact", "-flags:a", "+bitexact", str(f)]
             rc, _, err = run_ffmpeg(args, data=raw)
             if rc != 0 or not f.exists():
                 raise ToolError(f"ffmpeg could not encode piece {i + 1} of {set_id}:\n{err.strip()[-600:]}")
@@ -165,6 +168,13 @@ def encode_pieces(wav_path, out_dir, set_id, piece, half, count, kbps, end_fade)
 
 # ------------------------------------------------------------------ packs
 def ev(set_id, i): return f"wubmas.{set_id}.p{i:04d}"
+
+
+LAYOUTS = ("split", "stereo")
+MONO_SHARE = 0.625      # a mono channel is encoded at this share of the stereo bitrate: the two channels together are a little more than the stereo piece (64 kbps stereo -> 40 + 40)
+
+
+def mono_kbps(kbps): return max(32, round(kbps * MONO_SHARE))
 
 
 def write_zip(path, entries):
@@ -191,10 +201,18 @@ def stage_entries(stage_dir):
     return out
 
 
-def java_pack(path, sets, desc, stage=()):
+def java_pack(path, sets, desc, stage=(), layout="stereo"):
+    """layout "stereo": one stereo sound per piece (Minecraft plays a stereo sound at the player's ears: the same volume everywhere). "split": the left and the right channel as two mono sounds per piece
+    (wubmas.<set>.pNNNN.l and .r, from p<NNNN>_l.ogg and _r.ogg), which the plugin plays from a left and a right speaker at the stage so that the game fades them with the distance."""
+    if layout not in LAYOUTS: raise ToolError(f"the Java layout is split or stereo (got {layout!r})")
     sounds, entries = {}, []
     for s in sets:
         for i in range(s["pieces"]):
+            if layout == "split":
+                for ch, key in (("l", "files_l"), ("r", "files_r")):
+                    sounds[f"{ev(s['id'], i)}.{ch}"] = {"sounds": [{"name": f"wubmas/{s['id']}/p{i:04d}_{ch}", "stream": True}]}
+                    entries.append((f"assets/minecraft/sounds/wubmas/{s['id']}/p{i:04d}_{ch}.ogg", s[key][i]))
+                continue
             sounds[ev(s["id"], i)] = {"sounds": [{"name": f"wubmas/{s['id']}/p{i:04d}", "stream": True}]}
             entries.append((f"assets/minecraft/sounds/wubmas/{s['id']}/p{i:04d}.ogg", s["files"][i]))
     # min_format / max_format cover every client since 1.21.9 (the final range for 26.x was not published when this was made); a client outside it would still load the pack
@@ -229,13 +247,13 @@ def set_key(text, key, value):
     return new
 
 
-def write_config(path, template, lineup, built, source, piece=15.0, overlap=0.3, pack_url="", pack_sha1=""):
+def write_config(path, template, lineup, built, source, piece=15.0, overlap=0.3, pack_url="", pack_sha1="", layout="stereo"):
     text = template.read_text(encoding="utf-8")
     cut = re.search(r"^sets:\s*$", text, re.M)
     if not cut: raise ToolError("config-template.yml has no 'sets:' line")
     head = text[:cut.start()]
     head = set_key(head, "piece-seconds", f"{piece:g}"); head = set_key(head, "overlap-seconds", f"{overlap:g}"); head = set_key(head, "source", source)
-    head = set_key(head, "url", yaml_str(pack_url)); head = set_key(head, "sha1", yaml_str(pack_sha1))
+    head = set_key(head, "url", yaml_str(pack_url)); head = set_key(head, "sha1", yaml_str(pack_sha1)); head = set_key(head, "layout", layout)
     lines = ["sets:"]
     for e in lineup:
         b = built.get(e["id"])
@@ -244,14 +262,14 @@ def write_config(path, template, lineup, built, source, piece=15.0, overlap=0.3,
     path.write_text(head + "\n".join(lines) + "\n", encoding="utf-8")
 
 
-def write_library(path, lineup, built, piece, overlap, pack_url, pack_sha1, bedrock_url="", bedrock_sha1="", bedrock_bytes=0, build=1, built_at=None, lights_url="", lights_sha1="", lights_bytes=0):
+def write_library(path, lineup, built, piece, overlap, pack_url, pack_sha1, bedrock_url="", bedrock_sha1="", bedrock_bytes=0, build=1, built_at=None, lights_url="", lights_sha1="", lights_bytes=0, layout="stereo"):
     """library.yml: everything /wubmusic update needs to switch the server to this build (the Java pack's address and SHA-1, the Bedrock pack, the sets with their lengths and start times)."""
     from datetime import datetime, timezone
     when = built_at or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     L = ["# Written by the Wubmas music builder. /wubmusic update on the server downloads this file and uses it instead of the sets and the resource-pack in config.yml.",
          "# Do not edit it: the next update replaces it. (Delete it and run /wubmusic reload to go back to config.yml.)",
          f"build: {int(build)}", f"built: {yaml_str(when)}", f"piece-seconds: {piece:g}", f"overlap-seconds: {overlap:g}",
-         "resource-pack:", f"  url: {yaml_str(pack_url)}", f"  sha1: {yaml_str(pack_sha1)}"]
+         "resource-pack:", f"  url: {yaml_str(pack_url)}", f"  sha1: {yaml_str(pack_sha1)}", f"  layout: {layout}"]
     if bedrock_url:
         L += ["bedrock-pack:", f"  url: {yaml_str(bedrock_url)}", f"  sha1: {yaml_str(bedrock_sha1)}", f"  bytes: {int(bedrock_bytes)}"]
     if lights_url:
@@ -330,8 +348,9 @@ def test_set_for(p, taken):
     return {"id": sid, "name": f"Test: {pretty}" if pretty else f"Test: {sid}", "start": TEST_START, "test": True}
 
 
-def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, normalize=True, lineup_file=None, source="record", cap_mb=250, tail_min=2.0, end_fade=1.0, extra_lineup=None, quiet=False, demo=False, pack_url="", bedrock_url="", version=None, strict_ids=False, short_min=10.0, stage_dir=None, lights=False, lights_url=""):
+def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, normalize=True, lineup_file=None, source="record", cap_mb=250, tail_min=2.0, end_fade=1.0, extra_lineup=None, quiet=False, demo=False, pack_url="", bedrock_url="", version=None, strict_ids=False, short_min=10.0, stage_dir=None, lights=False, lights_url="", java_layout="split"):
     sets_dir = Path(sets_dir); out = Path(out)
+    if java_layout not in LAYOUTS: raise ToolError(f"the Java layout is split or stereo (got {java_layout!r})")
     if pack_url and not re.fullmatch(r"https?://[\x21-\x7e]{3,2000}", pack_url): raise ToolError(f"--pack-url must be a web address that starts with https:// and has no spaces or accents (got {pack_url!r}).")
     if bedrock_url and not re.fullmatch(r"https?://[\x21-\x7e]{3,2000}", bedrock_url): raise ToolError(f"--bedrock-url must be a web address that starts with https:// and has no spaces or accents (got {bedrock_url!r}).")
     if bedrock_url and not pack_url: raise ToolError("--bedrock-url needs --pack-url as well (library.yml has the Java pack first).")
@@ -375,12 +394,17 @@ def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, 
             if not quiet: say(f"[{sid}] {dur / 60:.1f} min, cutting into {count} pieces of {piece:g} s and encoding at {kbps} kbps ...")
             files_ = encode_pieces(wav, work / "ogg", sid, piece, overlap / 2, count, kbps, end_fade)
             size = sum(f.stat().st_size for f in files_)
+            files_l = files_r = None
+            if java_layout == "split":
+                if not quiet: say(f"[{sid}] and the left and the right channel apart for Java ({mono_kbps(kbps)} kbps each) ...")
+                files_l = encode_pieces(wav, work / "ogg", sid, piece, overlap / 2, count, mono_kbps(kbps), end_fade, "l")
+                files_r = encode_pieces(wav, work / "ogg", sid, piece, overlap / 2, count, mono_kbps(kbps), end_fade, "r")
             if lm is not None:
                 if not quiet: say(f"[{sid}] finding the beats for the lights ...")
                 res, lw = analyse_lights(lm, wav, sid, seconds)
                 light_warnings += lw
                 if res is not None: light_sets[sid] = res
-            built[sid] = {"id": sid, "name": e["name"], "pieces": count, "seconds": seconds, "files": files_, "size": size, "duration": dur, "stats": st, "source": src.name, "start": e["start"]}
+            built[sid] = {"id": sid, "name": e["name"], "pieces": count, "seconds": seconds, "files": files_, "files_l": files_l, "files_r": files_r, "size": size, "duration": dur, "stats": st, "source": src.name, "start": e["start"]}
             os.remove(wav)
         sets = [built[e["id"]] for e in lineup if e["id"] in built]
         vf = out / ".pack-version"
@@ -390,7 +414,7 @@ def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, 
         desc = f"Wubmas music{' (DEMO)' if demo else ''}, build {version}"
         jp = out / "WubmasMusic-java.zip"; bp = out / "WubmasMusic-bedrock.mcpack"
         stage = stage_entries(STAGE_DIR if stage_dir is None else stage_dir)
-        sounds = java_pack(jp, sets, desc, stage)
+        sounds = java_pack(jp, sets, desc, stage, java_layout)
         defs = bedrock_pack(bp, sets, desc, source, version, "wubmas-music-demo" if demo else "wubmas-music", "Wubmas Music (demo)" if demo else "Wubmas Music")
         vf.write_text(json.dumps({"n": version}))
         jsha = sha1(jp)
@@ -403,13 +427,13 @@ def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, 
             if lights_url and not light_sets: light_warnings.append("--lights-url was given but there is no light map, so library.yml has no lights entry.")
             light_info = {"sets": light_sets, "file": lf if light_sets else None, "url": lights_url if light_sets else "", "warnings": light_warnings}
         elif lights: light_info = {"sets": {}, "file": None, "url": "", "warnings": light_warnings}
-        write_config(out / "config.yml", HERE / "config-template.yml", lineup, built, source, piece, overlap, pack_url, jsha)
+        write_config(out / "config.yml", HERE / "config-template.yml", lineup, built, source, piece, overlap, pack_url, jsha, java_layout)
         lurl = lights_url if light_sets else ""
         if pack_url: write_library(out / "library.yml", lineup, built, piece, overlap, pack_url, jsha, bedrock_url, sha1(bp) if bedrock_url else "", bp.stat().st_size if bedrock_url else 0, version,
-                                   lights_url=lurl, lights_sha1=sha1(lf) if lurl else "", lights_bytes=lf.stat().st_size if lurl else 0)
-        write_report(out / "REPORT.txt", sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs if normalize else None, lineup, pack_url, file_notes, file_warnings, 0 if demo else short_min, len(stage), light_info)
+                                   lights_url=lurl, lights_sha1=sha1(lf) if lurl else "", lights_bytes=lf.stat().st_size if lurl else 0, layout=java_layout)
+        write_report(out / "REPORT.txt", sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs if normalize else None, lineup, pack_url, file_notes, file_warnings, 0 if demo else short_min, len(stage), light_info, java_layout)
         write_server_files(out, bp, lf if light_sets else None)
-        return {"sets": sets, "java": jp, "bedrock": bp, "events": len(sounds), "version": version, "java_mb": jp.stat().st_size / 1e6, "bedrock_mb": bp.stat().st_size / 1e6, "lineup": lineup, "lights": lf if light_sets else None, "light_sets": sorted(light_sets)}
+        return {"sets": sets, "java": jp, "bedrock": bp, "events": len(sounds), "layout": java_layout, "version": version, "java_mb": jp.stat().st_size / 1e6, "bedrock_mb": bp.stat().st_size / 1e6, "lineup": lineup, "lights": lf if light_sets else None, "light_sets": sorted(light_sets)}
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
@@ -434,7 +458,7 @@ def parse_start(t):
     return None
 
 
-def write_report(path, sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs, lineup=(), pack_url="", file_notes=(), file_warnings=(), short_min=10.0, stage_count=None, lights=None):
+def write_report(path, sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs, lineup=(), pack_url="", file_notes=(), file_warnings=(), short_min=10.0, stage_count=None, lights=None, layout="stereo"):
     wid = max([16] + [len(s["id"]) + 2 for s in sets] + [len(n[0]) + 2 for n in file_notes])
     L = [f"WUBMAS MUSIC - build {version}", "", f"{'set':<{wid}}{'file':<24}{'length':>8}{'pieces':>8}{'size':>9}   loudness (before -> after)"]
     warnings = list(file_warnings)
@@ -464,6 +488,12 @@ def write_report(path, sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs
             L.append("  A test set is a file that is not a DJ's set. It never starts by itself: start it by hand with /wubmusic start <id> 0 (and /wubmusic stop).")
     jm, bm = jp.stat().st_size / 1e6, bp.stat().st_size / 1e6
     L += ["", f"Java pack:    {jm:.1f} MB   (the server limit for a resource pack is {cap_mb} MB)", f"Bedrock pack: {bm:.1f} MB   (every Bedrock player downloads this when they join, once per version)"]
+    if layout == "split":
+        L += ["Java layout:  split - every piece is in the Java pack as a left and a right channel (mono, "
+              f"{mono_kbps(kbps)} kbps each), which the plugin plays from two speakers at the stage, so the stereo stays and the music gets quieter the further a player walks from the stage",
+              "              (Bedrock players get the stereo pieces, and the fade in steps). Needs WubmasMusic 1.7.0 or newer and a stage point: /wubmusic stage set, standing at the middle of the stage and facing the dance floor."]
+    else:
+        L += ["Java layout:  stereo - one stereo sound per piece: the same volume everywhere for Java players (a stereo sound is not faded by the game)"]
     if stage_count is not None:
         L += [f"Stage models: {stage_count} files (CDJs, mixer) are in the Java pack" if stage_count else "Stage models: none"]
         if not stage_count: warnings.append("The Java pack has no stage models (the stage_assets folder next to the tool is missing or empty), so the CDJs and the mixer show the pink-and-black missing texture in game.")
@@ -560,6 +590,7 @@ def main(argv=None):
     ap.add_argument("--strict-ids", action="store_true", help="stop with an error when a file is not one of the DJs in lineup.json (instead of making it a test set that never starts by itself)")
     ap.add_argument("--lights-url", default="", help="the web address the light map (lights.txt) will be uploaded to, on the same website as the packs (library.yml gets it with the SHA-1; /wubmusic update downloads it)")
     ap.add_argument("--no-lights", action="store_true", help="do not find the beats for the stage lights (saves a few seconds per set; there is no light map then)")
+    ap.add_argument("--java-stereo", action="store_true", help="make the Java pack with one stereo sound per piece (the old layout: the same volume everywhere). The default is the split layout, with the left and the right channel apart, which the plugin (1.7.0 or newer) plays from two speakers at the stage so the music fades with the distance and stays in stereo")
     ap.add_argument("--demo", action="store_true", help="build a 2 minute made-up sound check set instead of reading a folder (needs numpy)")
     a = ap.parse_args(argv)
     try:
@@ -571,7 +602,7 @@ def main(argv=None):
             tmp = tempfile.mkdtemp(prefix="wubmas_demo_"); make_demo(tmp); a.sets = tmp
         if not a.sets: ap.error("give the folder with the set files (or --demo)")
         r = build(a.sets, a.out, kbps=a.kbps, piece=a.piece, overlap=a.overlap, lufs=a.lufs, normalize=not a.no_normalize, lineup_file=a.lineup, source=a.source, cap_mb=a.cap_mb,
-                  extra_lineup=[{"id": "soundcheck", "name": "Sound check", "start": "2026-01-01 12:00"}] if a.demo else None, demo=a.demo, pack_url=a.pack_url.strip(), bedrock_url=a.bedrock_url.strip(), version=a.version, strict_ids=a.strict_ids, short_min=a.short_minutes, stage_dir=a.stage_assets, lights=not a.no_lights, lights_url=a.lights_url.strip())
+                  extra_lineup=[{"id": "soundcheck", "name": "Sound check", "start": "2026-01-01 12:00"}] if a.demo else None, demo=a.demo, pack_url=a.pack_url.strip(), bedrock_url=a.bedrock_url.strip(), version=a.version, strict_ids=a.strict_ids, short_min=a.short_minutes, stage_dir=a.stage_assets, lights=not a.no_lights, lights_url=a.lights_url.strip(), java_layout="stereo" if a.java_stereo else "split")
         if tmp: shutil.rmtree(tmp, ignore_errors=True)
     except ToolError as e:
         print("\nERROR: " + str(e), file=sys.stderr); return 1

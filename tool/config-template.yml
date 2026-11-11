@@ -29,6 +29,11 @@ resource-pack:
   sha1: "c95306c8633156a54fe101dafc25c5acab551d44"
   delay-seconds: 2                 # how long after joining the pack is offered
   prompt: "Wubmas music: a one-time download, then your game keeps it."     # on the screen that asks to allow it; "" for no text
+  # How the Java pack holds each piece: "stereo" = one stereo sound (Minecraft plays a stereo sound at the player's ears, so it is the same volume
+  # everywhere and the stage fade does nothing for Java players); "split" = the left and the right channel as two sounds, played from a left and a
+  # right speaker at the stage (/wubmusic stage set), so the music gets quieter as a player walks away and the stereo stays.
+  # The music builder writes "split" into library.yml and /wubmusic update switches to it; set it here only for a pack you made yourself.
+  layout: stereo
 
 # Music from GitHub. The music builder (the wubmas-music repository on GitHub) turns the DJ files into the packs and a file called library.yml.
 # /wubmusic update downloads that file (and the Bedrock pack), checks them and switches the server to the new music: the sets and the Java pack in library.yml then
