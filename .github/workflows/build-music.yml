@@ -10,6 +10,10 @@ on:
         description: "Music quality in kbps. 64 is small and good for a game, 96 is better, 128 is large."
         required: true
         default: "64"
+      piece:
+        description: "Seconds per piece. Shorter pieces put a player who comes back, or walks into the stage area, in sync with the music sooner (6 = within about 4 seconds, 15 = within about 12) but have more joins between pieces; the pack is about 9 percent bigger at 6."
+        required: true
+        default: "15"
   push:
     paths:
       - "lineup.json"
@@ -30,6 +34,7 @@ jobs:
       REPO: ${{ github.repository }}
       TAG: music-${{ github.run_number }}
       KBPS: ${{ inputs.kbps || '64' }}
+      PIECE: ${{ inputs.piece || '15' }}
     steps:
       - name: Get this repository
         uses: actions/checkout@v4
@@ -42,7 +47,7 @@ jobs:
 
       - name: Build the packs
         run: |
-          python3 tool/make_music_packs.py sets --out build --lineup lineup.json --kbps "$KBPS" \
+          python3 tool/make_music_packs.py sets --out build --lineup lineup.json --kbps "$KBPS" --piece "$PIECE" \
             --pack-url "https://github.com/$REPO/releases/download/$TAG/WubmasMusic-java.zip" \
             --bedrock-url "https://github.com/$REPO/releases/download/$TAG/WubmasMusic-bedrock.mcpack" \
             --lights-url "https://github.com/$REPO/releases/download/$TAG/lights.txt" \
