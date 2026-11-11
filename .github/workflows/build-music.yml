@@ -2,7 +2,7 @@ name: Build Wubmas music
 
 # Run it by hand: Actions tab, "Build Wubmas music", Run workflow. It also runs when lineup.json is edited.
 # It takes the DJ files from the private draft release "Wubmas music files" (and the music/ folder, if there is one), turns them into the Java pack and
-# the Bedrock pack, publishes both as a release called music-<number>, and keeps the newest three builds.
+# the Bedrock pack, finds the beats of every set for the stage lights (lights.txt), publishes them as a release called music-<number>, and keeps the newest three builds.
 on:
   workflow_dispatch:
     inputs:
@@ -45,6 +45,7 @@ jobs:
           python3 tool/make_music_packs.py sets --out build --lineup lineup.json --kbps "$KBPS" \
             --pack-url "https://github.com/$REPO/releases/download/$TAG/WubmasMusic-java.zip" \
             --bedrock-url "https://github.com/$REPO/releases/download/$TAG/WubmasMusic-bedrock.mcpack" \
+            --lights-url "https://github.com/$REPO/releases/download/$TAG/lights.txt" \
             --version "${{ github.run_number }}"
 
       - name: Publish the release

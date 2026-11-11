@@ -8,7 +8,8 @@ is that DJ's set and starts on the DJ's time. Every other file becomes a test se
 It writes into --out:
   WubmasMusic-java.zip       the Java resource pack (the server hands it to Java players)
   WubmasMusic-bedrock.mcpack the Bedrock pack (goes in Geyser's packs folder)
-  server-files/              config.yml and the Bedrock pack in the server's own folder layout: drag its plugins folder onto the server
+  lights.txt                 when the stage lights follow the music: where every beat, bar, break and drop of every set is (found by lightmap.py, next to this script)
+  server-files/              config.yml, lights.txt and the Bedrock pack in the server's own folder layout: drag its plugins folder onto the server
   config.yml                 the WubmasMusic plugin config with the sets, piece counts and lengths filled in
   REPORT.txt                 sizes, loudness, warnings, and the server.properties lines
 
@@ -85,6 +86,34 @@ def to_wav(src, dst, normalize, lufs, tp):
             try: stats.update(output_i=float(m["output_i"]), output_tp=float(m["output_tp"]))
             except (KeyError, ValueError): pass
     return stats
+
+
+# ------------------------------------------------------------------ the light map
+def load_lightmap():
+    """The beat analyzer (lightmap.py, next to this script); None when it is not there."""
+    try:
+        if str(HERE) not in sys.path: sys.path.insert(0, str(HERE))
+        import lightmap
+        return lightmap
+    except ImportError:
+        return None
+
+
+def analyse_lights(lm, wav, sid, seconds):
+    """(the analysis of one set, [warnings]); the analysis is None when there are no lights for it. Whatever goes wrong in here is a warning and never stops the music from being built."""
+    try:
+        r = lm.analyze(wav, run_ffmpeg)
+    except lm.AnalysisError as e:
+        why = str(e).strip().splitlines()[0].rstrip(": ") if str(e).strip() else "the beat analysis failed"
+        return None, [f"{sid}: no lights for this set ({why}). The music is not affected."]
+    except Exception as e:   # noqa: a bug in the analysis must never stop the music from being built
+        return None, [f"{sid}: no lights for this set (the beat analysis failed: {type(e).__name__}: {e}). The music is not affected."]
+    warn = [f"{sid}: {w}" for w in r["warnings"]]
+    limit = int(seconds * 1000)
+    tokens = [(t, c) for t, c in r["tokens"] if t <= limit]       # (the light map must not be longer than the music: the plugin compares the two lengths)
+    if not tokens:
+        return None, [f"{sid}: no lights for this set" + (" (" + "; ".join(r["warnings"]) + ")" if r["warnings"] else " (no beat was found)") + ". The music is not affected."]
+    return dict(r, tokens=tokens, seconds=seconds), warn
 
 
 def measure(src):
@@ -215,7 +244,7 @@ def write_config(path, template, lineup, built, source, piece=15.0, overlap=0.3,
     path.write_text(head + "\n".join(lines) + "\n", encoding="utf-8")
 
 
-def write_library(path, lineup, built, piece, overlap, pack_url, pack_sha1, bedrock_url="", bedrock_sha1="", bedrock_bytes=0, build=1, built_at=None):
+def write_library(path, lineup, built, piece, overlap, pack_url, pack_sha1, bedrock_url="", bedrock_sha1="", bedrock_bytes=0, build=1, built_at=None, lights_url="", lights_sha1="", lights_bytes=0):
     """library.yml: everything /wubmusic update needs to switch the server to this build (the Java pack's address and SHA-1, the Bedrock pack, the sets with their lengths and start times)."""
     from datetime import datetime, timezone
     when = built_at or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -225,6 +254,8 @@ def write_library(path, lineup, built, piece, overlap, pack_url, pack_sha1, bedr
          "resource-pack:", f"  url: {yaml_str(pack_url)}", f"  sha1: {yaml_str(pack_sha1)}"]
     if bedrock_url:
         L += ["bedrock-pack:", f"  url: {yaml_str(bedrock_url)}", f"  sha1: {yaml_str(bedrock_sha1)}", f"  bytes: {int(bedrock_bytes)}"]
+    if lights_url:
+        L += ["lights:", f"  url: {yaml_str(lights_url)}", f"  sha1: {yaml_str(lights_sha1)}", f"  bytes: {int(lights_bytes)}"]
     L.append("sets:")
     for e in lineup:
         b = built.get(e["id"])
@@ -299,11 +330,14 @@ def test_set_for(p, taken):
     return {"id": sid, "name": f"Test: {pretty}" if pretty else f"Test: {sid}", "start": TEST_START, "test": True}
 
 
-def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, normalize=True, lineup_file=None, source="record", cap_mb=250, tail_min=2.0, end_fade=1.0, extra_lineup=None, quiet=False, demo=False, pack_url="", bedrock_url="", version=None, strict_ids=False, short_min=10.0, stage_dir=None):
+def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, normalize=True, lineup_file=None, source="record", cap_mb=250, tail_min=2.0, end_fade=1.0, extra_lineup=None, quiet=False, demo=False, pack_url="", bedrock_url="", version=None, strict_ids=False, short_min=10.0, stage_dir=None, lights=False, lights_url=""):
     sets_dir = Path(sets_dir); out = Path(out)
     if pack_url and not re.fullmatch(r"https?://[\x21-\x7e]{3,2000}", pack_url): raise ToolError(f"--pack-url must be a web address that starts with https:// and has no spaces or accents (got {pack_url!r}).")
     if bedrock_url and not re.fullmatch(r"https?://[\x21-\x7e]{3,2000}", bedrock_url): raise ToolError(f"--bedrock-url must be a web address that starts with https:// and has no spaces or accents (got {bedrock_url!r}).")
     if bedrock_url and not pack_url: raise ToolError("--bedrock-url needs --pack-url as well (library.yml has the Java pack first).")
+    if lights_url and not re.fullmatch(r"https://[\x21-\x7e]{3,2000}", lights_url): raise ToolError(f"--lights-url must be a web address that starts with https:// and has no spaces or accents (got {lights_url!r}).")
+    if lights_url and not pack_url: raise ToolError("--lights-url needs --pack-url as well (library.yml has the Java pack first).")
+    if lights_url and not lights: raise ToolError("--lights-url and --no-lights do not go together: there would be no light map to download.")
     if version is not None and (not isinstance(version, int) or isinstance(version, bool) or not (1 <= version <= 2_000_000_000)): raise ToolError("--version must be a whole number from 1 up (it is the Bedrock pack's version: Bedrock players download the pack again when it goes up).")
     if not sets_dir.is_dir(): raise ToolError(f"{sets_dir} is not a folder. Put the DJ set files in a folder and give its name.")
     if abs(piece * 20 - round(piece * 20)) > 1e-9 or abs(overlap * 20 - round(overlap * 20)) > 1e-9 or not (2 <= piece <= 120) or not (0 <= overlap < piece / 2):
@@ -322,6 +356,9 @@ def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, 
         if not quiet: say(f"Note: {p.name} is not a DJ's set, so it is the test set '{e['id']}'. It never starts by itself: /wubmusic start {e['id']} 0")
     file_notes = [(e["id"], e["name"], ids[e["id"]].name if e["id"] in ids else None, assigned[e["id"]][1] if e["id"] in assigned else ("test set" if e.get("test") else None)) for e in lineup]
     out.mkdir(parents=True, exist_ok=True)
+    lm = load_lightmap() if lights else None
+    light_sets, light_warnings = {}, []
+    if lights and lm is None: light_warnings.append("lightmap.py is not next to this tool, so there are no lights (the music is built without a light map).")
     work = Path(tempfile.mkdtemp(prefix="wubmas_music_"))
     try:
         built, report = {}, []
@@ -338,6 +375,11 @@ def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, 
             if not quiet: say(f"[{sid}] {dur / 60:.1f} min, cutting into {count} pieces of {piece:g} s and encoding at {kbps} kbps ...")
             files_ = encode_pieces(wav, work / "ogg", sid, piece, overlap / 2, count, kbps, end_fade)
             size = sum(f.stat().st_size for f in files_)
+            if lm is not None:
+                if not quiet: say(f"[{sid}] finding the beats for the lights ...")
+                res, lw = analyse_lights(lm, wav, sid, seconds)
+                light_warnings += lw
+                if res is not None: light_sets[sid] = res
             built[sid] = {"id": sid, "name": e["name"], "pieces": count, "seconds": seconds, "files": files_, "size": size, "duration": dur, "stats": st, "source": src.name, "start": e["start"]}
             os.remove(wav)
         sets = [built[e["id"]] for e in lineup if e["id"] in built]
@@ -352,16 +394,27 @@ def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, 
         defs = bedrock_pack(bp, sets, desc, source, version, "wubmas-music-demo" if demo else "wubmas-music", "Wubmas Music (demo)" if demo else "Wubmas Music")
         vf.write_text(json.dumps({"n": version}))
         jsha = sha1(jp)
+        lf = out / "lights.txt"
+        if lf.exists(): lf.unlink()                       # (never leave the map of an earlier build next to this build's music)
+        light_info = None
+        if lm is not None:
+            if light_sets: lf.write_text(lm.format_map(light_sets), encoding="utf-8")
+            else: light_warnings.append("No light map was made: none of the sets gave a beat to follow. The lights stay as they are, and the music is not affected.")
+            if lights_url and not light_sets: light_warnings.append("--lights-url was given but there is no light map, so library.yml has no lights entry.")
+            light_info = {"sets": light_sets, "file": lf if light_sets else None, "url": lights_url if light_sets else "", "warnings": light_warnings}
+        elif lights: light_info = {"sets": {}, "file": None, "url": "", "warnings": light_warnings}
         write_config(out / "config.yml", HERE / "config-template.yml", lineup, built, source, piece, overlap, pack_url, jsha)
-        if pack_url: write_library(out / "library.yml", lineup, built, piece, overlap, pack_url, jsha, bedrock_url, sha1(bp) if bedrock_url else "", bp.stat().st_size if bedrock_url else 0, version)
-        write_report(out / "REPORT.txt", sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs if normalize else None, lineup, pack_url, file_notes, file_warnings, 0 if demo else short_min, len(stage))
-        write_server_files(out, bp)
-        return {"sets": sets, "java": jp, "bedrock": bp, "events": len(sounds), "version": version, "java_mb": jp.stat().st_size / 1e6, "bedrock_mb": bp.stat().st_size / 1e6, "lineup": lineup}
+        lurl = lights_url if light_sets else ""
+        if pack_url: write_library(out / "library.yml", lineup, built, piece, overlap, pack_url, jsha, bedrock_url, sha1(bp) if bedrock_url else "", bp.stat().st_size if bedrock_url else 0, version,
+                                   lights_url=lurl, lights_sha1=sha1(lf) if lurl else "", lights_bytes=lf.stat().st_size if lurl else 0)
+        write_report(out / "REPORT.txt", sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs if normalize else None, lineup, pack_url, file_notes, file_warnings, 0 if demo else short_min, len(stage), light_info)
+        write_server_files(out, bp, lf if light_sets else None)
+        return {"sets": sets, "java": jp, "bedrock": bp, "events": len(sounds), "version": version, "java_mb": jp.stat().st_size / 1e6, "bedrock_mb": bp.stat().st_size / 1e6, "lineup": lineup, "lights": lf if light_sets else None, "light_sets": sorted(light_sets)}
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
 
-def write_server_files(out, bedrock_pack_path):
+def write_server_files(out, bedrock_pack_path, lights_path=None):
     """server-files/plugins/... : the same files in the folders (and with the names) the server wants, so they can be dropped onto the server as they are."""
     srv = out / "server-files"
     if srv.exists(): shutil.rmtree(srv)
@@ -369,6 +422,7 @@ def write_server_files(out, bedrock_pack_path):
     cfg_dir.mkdir(parents=True); packs_dir.mkdir(parents=True)
     shutil.copyfile(out / "config.yml", cfg_dir / "config.yml")
     shutil.copyfile(bedrock_pack_path, packs_dir / "WubmasMusic.mcpack")
+    if lights_path: shutil.copyfile(lights_path, cfg_dir / "lights.txt")
     return srv
 
 
@@ -380,7 +434,7 @@ def parse_start(t):
     return None
 
 
-def write_report(path, sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs, lineup=(), pack_url="", file_notes=(), file_warnings=(), short_min=10.0, stage_count=None):
+def write_report(path, sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs, lineup=(), pack_url="", file_notes=(), file_warnings=(), short_min=10.0, stage_count=None, lights=None):
     wid = max([16] + [len(s["id"]) + 2 for s in sets] + [len(n[0]) + 2 for n in file_notes])
     L = [f"WUBMAS MUSIC - build {version}", "", f"{'set':<{wid}}{'file':<24}{'length':>8}{'pieces':>8}{'size':>9}   loudness (before -> after)"]
     warnings = list(file_warnings)
@@ -413,6 +467,16 @@ def write_report(path, sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs
     if stage_count is not None:
         L += [f"Stage models: {stage_count} files (CDJs, mixer) are in the Java pack" if stage_count else "Stage models: none"]
         if not stage_count: warnings.append("The Java pack has no stage models (the stage_assets folder next to the tool is missing or empty), so the CDJs and the mixer show the pink-and-black missing texture in game.")
+    if lights is not None:
+        ls = lights["sets"]
+        if ls:
+            L += [f"Light map:    lights.txt, {lights['file'].stat().st_size / 1024:.0f} KB, {len(ls)} set{'s' if len(ls) != 1 else ''} (the stage lights follow the beat, the bars, the breaks and the drops)"]
+            for sid in (s["id"] for s in sets):
+                r = ls.get(sid)
+                L.append(f"  {sid:<{wid}}" + (f"{r['bpm']:>6.1f} BPM {r['beats']:>6} beats {r['breaks']:>3} breaks {r['drops']:>3} drops   steady {r['steady'] * 100:.0f}%" if r else "no lights"))
+        else:
+            L += ["Light map:    none (see the warnings)"]
+        warnings += lights["warnings"]
     if jm > cap_mb: warnings.append(f"The Java pack is {jm:.0f} MB, over the {cap_mb} MB limit. Use --kbps {max(48, int(kbps * cap_mb / jm * 0.9))} or fewer or shorter sets.")
     elif jm > cap_mb * 0.9: warnings.append(f"The Java pack is {jm:.0f} MB, close to the {cap_mb} MB limit.")
     if bm > 150: warnings.append(f"The Bedrock pack is {bm:.0f} MB. On a phone that is a long download at join time; consider --kbps {max(48, int(kbps * 120 / bm))}.")
@@ -427,6 +491,9 @@ def write_report(path, sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs
            else "     Then put the link in plugins/WubmasMusic/config.yml, under resource-pack:, as  url: \"<that link>\"  (it is empty now, so the plugin sends no pack yet), and run /wubmusic reload."),
           "     Leave resource-pack= and resource-pack-sha1= EMPTY in server.properties (with the server stopped): the plugin sends the Java pack a moment after players join,",
           "     so nobody waits for it in the join screen. A player who has the same pack already (same SHA-1) downloads nothing.",
+          *( ["  3. lights.txt -> upload it where a direct download link works, at exactly " + lights["url"] + " (the same website as library.yml; /wubmusic update downloads it and checks it against the SHA-1 in library.yml).",
+              "     It is also in server-files/plugins/WubmasMusic/, so step 1 already puts this build's light map on the server."] if lights and lights["file"] and lights["url"] else
+             ["  3. lights.txt is in server-files/plugins/WubmasMusic/, so step 1 puts it on the server. (Build with --lights-url so that /wubmusic update brings the light map too.)"] if lights and lights["file"] else []),
           "", f"Timing: pieces of {piece:g} s with {overlap:g} s overlap. config.yml must have the same piece-seconds and overlap-seconds (it does unless you changed them)."]
     path.write_text("\n".join(L) + "\n", encoding="utf-8")
 
@@ -491,6 +558,8 @@ def main(argv=None):
     ap.add_argument("--stage-assets", default=None, help="folder with the CDJ/mixer models and textures for the Java pack, laid out as in a resource pack (default: stage_assets next to this tool)")
     ap.add_argument("--short-minutes", type=float, default=10.0, help="warn when a DJ's file is shorter than this many minutes, because it is probably a song and not a set (0 = never warn)")
     ap.add_argument("--strict-ids", action="store_true", help="stop with an error when a file is not one of the DJs in lineup.json (instead of making it a test set that never starts by itself)")
+    ap.add_argument("--lights-url", default="", help="the web address the light map (lights.txt) will be uploaded to, on the same website as the packs (library.yml gets it with the SHA-1; /wubmusic update downloads it)")
+    ap.add_argument("--no-lights", action="store_true", help="do not find the beats for the stage lights (saves a few seconds per set; there is no light map then)")
     ap.add_argument("--demo", action="store_true", help="build a 2 minute made-up sound check set instead of reading a folder (needs numpy)")
     a = ap.parse_args(argv)
     try:
@@ -502,7 +571,7 @@ def main(argv=None):
             tmp = tempfile.mkdtemp(prefix="wubmas_demo_"); make_demo(tmp); a.sets = tmp
         if not a.sets: ap.error("give the folder with the set files (or --demo)")
         r = build(a.sets, a.out, kbps=a.kbps, piece=a.piece, overlap=a.overlap, lufs=a.lufs, normalize=not a.no_normalize, lineup_file=a.lineup, source=a.source, cap_mb=a.cap_mb,
-                  extra_lineup=[{"id": "soundcheck", "name": "Sound check", "start": "2026-01-01 12:00"}] if a.demo else None, demo=a.demo, pack_url=a.pack_url.strip(), bedrock_url=a.bedrock_url.strip(), version=a.version, strict_ids=a.strict_ids, short_min=a.short_minutes, stage_dir=a.stage_assets)
+                  extra_lineup=[{"id": "soundcheck", "name": "Sound check", "start": "2026-01-01 12:00"}] if a.demo else None, demo=a.demo, pack_url=a.pack_url.strip(), bedrock_url=a.bedrock_url.strip(), version=a.version, strict_ids=a.strict_ids, short_min=a.short_minutes, stage_dir=a.stage_assets, lights=not a.no_lights, lights_url=a.lights_url.strip())
         if tmp: shutil.rmtree(tmp, ignore_errors=True)
     except ToolError as e:
         print("\nERROR: " + str(e), file=sys.stderr); return 1

@@ -48,6 +48,7 @@ When the run has a green tick, open it. The summary at the bottom shows the **li
 - **Java players** get the new pack when they next join, or when they type `/music pack`.
 - **Bedrock players** get it from Geyser, which reads its packs when the server starts, so restart the server once after an update.
 - `/wubmusic status` shows which build is in use.
+- The build also finds the beats, bars, breaks and drops of every set and publishes them as `lights.txt` next to the packs, so the stage lights can follow the music. `/wubmusic update` brings it along; `/wubmusic lights test` tries the lights without a set. A set where no beat could be found gets no lights, and the build report says so in its Warnings.
 
 ## Changing names or times
 

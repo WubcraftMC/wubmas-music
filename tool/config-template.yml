@@ -59,6 +59,65 @@ countdown:
   go-title: "{name}"               # in the middle of the screen when the music starts
   go-subtitle: "Now playing"
 
+# The CDJs on the DJ table show what is playing: a song's title and its artist, or the DJ's name, and when nothing plays the festival's name and when the next set is.
+# Set them up once: stand at the DJ table in game and run /wubmusic screens place. They are text displays lying on top of the CDJs; the plugin only rewrites their text when a set
+# starts or ends (nothing runs in between), so they cost the server nothing. Text the wrong way round? /wubmusic screens turn. /wubmusic screens remove takes them away.
+# Changed scale, width or background here? /wubmusic reload, then place them again.
+screens:
+  enabled: true                    # false = the plugin never writes to them, and place does nothing
+  scale: 0.2                       # size of the text (1 = like a name tag); 0.05 to 2
+  width: 100                       # how wide a line can get before it wraps, in text pixels; 20 to 400
+  max-chars: 16                    # a longer line is cut and ends in ...; 4 to 60
+  background: "C00A0A12"           # the colour behind the text: 8 hex digits, alpha red green blue (C0 is mostly solid); keep the quotes
+  subtitle: "Wubmas 2026"          # the small line under a DJ's name ("" = none); a test song shows its artist there instead
+  idle: "WUBMAS"                   # the big line when nothing plays
+  next-hours: 12                   # when nothing plays, the small line says when the next set starts if that is within this many hours; 0 = never
+
+# The stage lights follow the music. The builder (lightmap.py) finds the beats, bars, breaks and drops in each set's audio when it builds the music; the plugin then runs the commands
+# below at those moments, on the same clock as the music (Java and Bedrock alike). It costs the server nothing while no set plays. Needs a build that has a light map: /wubmusic update
+# fetches it (plugins/WubmasMusic/lights.txt). Try it without a set: /wubmusic lights test. On/off and "lights look early/late": /wubmusic lights on|off|offset <ms>.
+# A cue is a list of console commands, without the slash (the ones here drive ControlRoom, which drives StageLights). {color} is the next colour of palette, {effect} the next movement of
+# effects. "+4 command" runs the command 4 seconds after the cue. A cue with no commands does nothing. Cues: start (a set starts), beat (every strong beat; empty by default: a command per
+# beat is a lot of work for the lights, so use one cheap command), bar (the first beat of a bar, about every 2 s: the colour changes), phrase (every 8 bars: the movement changes),
+# drop (the kick comes back after a break), break (the kick stops for 8 beats or more), end (the set is over).
+# Safety first: the default cues never use the fast strobe (more than 3 flashes a second can trigger seizures), and the limits below keep any setting from flashing the lights faster
+# than 4 cues a second. Do not raise them without a good reason.
+lights:
+  enabled: true                    # false = no lights from the music (/wubmusic lights on|off does the same and is remembered in lights.yml)
+  offset-ms: 0                     # lights later (+) or earlier (-) than the music, -1000 to 1000
+  max-late-ms: 150                 # a beat, bar or phrase cue that is later than this (the server stalled) is dropped, not played out of step; a break or a drop may be 4 times as late
+  max-commands-per-tick: 6         # at most this many commands in one tick; the rest go out in the next ticks
+  beat-min-level: 2                # the beat cue is for beats of this level or more (1 soft, 2 normal, 3 hard)
+  bar-min-level: 1                 # the bar cue is for bars with a kick of this level or more (0 = also bars where the kick is out, in a break)
+  beat-seconds: 0.4                # the shortest time between two beat cues
+  bar-seconds: 1.4                 # between two bar cues (so a fast track changes colour every second bar, not every bar)
+  phrase-seconds: 4
+  drop-seconds: 10
+  break-seconds: 10
+  max-cues-per-second: 4           # beat, bar and phrase cues together; 1 to 20
+  min-tps: 17                      # the lights pause while the server runs slower than this many ticks a second, so they never add work to a server that is behind; 0 = never
+  palette: [red, magenta, purple, blue, cyan, light_blue, lime, orange]
+  effects: [sweep, wave, fan, circle, figure8, diamond]
+  cues:
+    start:
+      - controlroom test light all on
+      - controlroom test light all strobe/off
+    beat: []
+    bar:
+      - controlroom test light all color/{color}
+    phrase:
+      - controlroom test light all effect/{effect}
+    drop:
+      - controlroom test light all color/white
+      - controlroom test light all strobe/heartbeat     # 1.7 flashes a second: under the limit of 3
+      - +4 controlroom test light all strobe/off
+    break:
+      - controlroom test light all strobe/off
+      - controlroom test light all color/blue
+      - controlroom test light all effect/static
+    end:
+      - controlroom test light all strobe/off
+
 messages:
   join: "{name} is on. The music joins in about {wait} seconds. /music off to mute it."     # sent to people who join during a set (to Java players once the pack has loaded); "" to turn off
   pack-failed: "The Wubmas music pack did not load, so you will not hear the music. Type /music pack to try again (and allow server resource packs for this server if you turned them off)."     # "" to turn off

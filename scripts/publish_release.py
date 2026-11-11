@@ -3,7 +3,7 @@
 
   publish_release.py REPO TAG BUILD_DIR [--target COMMIT] [--keep 3]
 
-BUILD_DIR is what make_music_packs.py wrote. The release gets the Java pack, the Bedrock pack, library.yml and REPORT.txt, and becomes the "latest" release,
+BUILD_DIR is what make_music_packs.py wrote. The release gets the Java pack, the Bedrock pack, library.yml, REPORT.txt and, when library.yml has a light map, lights.txt, and becomes the "latest" release,
 so that  https://github.com/REPO/releases/latest/download/library.yml  is always the newest build. Builds older than the newest --keep are deleted
 (their tags too): only releases whose tag looks like music-<number> are ever touched. Needs gh and GH_TOKEN."""
 import argparse, json, os, re, subprocess, sys, tempfile
@@ -42,10 +42,16 @@ def main(argv=None):
         if missing: raise Fail("The build folder has no " + ", ".join(missing) + ".")
         lib = (b / "library.yml").read_text(encoding="utf-8")
         if f"releases/download/{a.tag}/" not in lib: raise Fail(f"library.yml does not point at the release {a.tag}, so the server would download the wrong files.")
+        files = list(FILES)
+        if re.search(r"^lights:", lib, re.M):        # (the build has a light map, and library.yml tells the server where to get it)
+            if not (b / "lights.txt").is_file(): raise Fail("library.yml has a light map but the build folder has no lights.txt, so the server's update would find nothing at that address.")
+            if f"releases/download/{a.tag}/lights.txt" not in lib: raise Fail(f"library.yml's light map is not at the release {a.tag}, so the server would download the wrong file.")
+            files.append("lights.txt")
+        elif (b / "lights.txt").is_file(): print("Note: the build has a lights.txt but library.yml does not point at it (no --lights-url), so it is not published.")
         gh(["release", "delete", a.tag, "--repo", a.repo, "--yes", "--cleanup-tag"], check=False)          # a re-run of the same build replaces its release
         notes = f"Build {a.tag.split('-')[1]} of the Wubmas music.\n\nOn the server: /wubmusic update\n\n" + (b / "REPORT.txt").read_text(encoding="utf-8")[:6000]
         with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8") as nf: nf.write(notes); nfp = nf.name
-        cmd = ["release", "create", a.tag] + [str(b / f) for f in FILES] + ["--repo", a.repo, "--title", f"Wubmas music build {a.tag.split('-')[1]}", "--notes-file", nfp, "--latest"]
+        cmd = ["release", "create", a.tag] + [str(b / f) for f in files] + ["--repo", a.repo, "--title", f"Wubmas music build {a.tag.split('-')[1]}", "--notes-file", nfp, "--latest"]
         if a.target: cmd += ["--target", a.target]
         try: gh(cmd)
         finally: os.unlink(nfp)
