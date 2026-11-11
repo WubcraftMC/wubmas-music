@@ -1,0 +1,74 @@
+# WubmasMusic: plays the DJ sets live from the resource pack.
+# The pack tool (make_music_packs.py) writes a ready config.yml with `pieces` and `seconds` filled in for the sets you gave it:
+# copy that file over this one, or copy its `sets:` list into here. A set with `pieces: 0` has no audio yet and never plays.
+# After editing: /wubmusic reload
+
+timezone: America/Los_Angeles      # the times below are read in this time zone
+
+# How the sets were cut. These must match what the pack tool used (its defaults are these numbers).
+piece-seconds: 15                  # length of one piece; a multiple of 0.05
+overlap-seconds: 0.3               # how much two pieces overlap at a join
+late-limit-ms: 500                 # a piece that is more than this late (the server stalled) is skipped, not played out of step
+
+sound:
+  source: record                   # which volume slider it follows: record (jukebox), music, master, ambient, player ...
+  volume: 1.0                      # only used when the music is the same volume everywhere (no stage point, or fade: false); with a stage point Java players' sliders do the rest
+  pitch: 1.0
+  # Walk away from the stage and the music fades out, come closer and it gets louder. For that the plugin needs to know where the speakers are:
+  # stand there in game and run /wubmusic stage set [radius]  (kept in stage.yml). The radius is how far away it can still be heard (default 64): silent beyond it, half as loud halfway.
+  # On Java the player's own game does the fading, so it costs the server nothing. false = the same volume everywhere, as before.
+  fade: true
+
+# The Java resource pack. The plugin hands it to Java players a moment AFTER they have joined: they are in the world straight away and the game downloads it in the background
+# (it saves it, so it is a one-time download until the pack changes). Leave resource-pack= and resource-pack-sha1= EMPTY in server.properties, or they get it in the join screen too.
+# Bedrock players get their pack from Geyser (plugins/Geyser-Spigot/packs) when they join and are not affected by this.
+# New pack: put its download link and its SHA-1 here (the pack tool prints both), then /wubmusic reload. It is used for the next player who joins.
+# An empty url = the plugin sends no pack.
+resource-pack:
+  url: "https://github.com/WubcraftMC/wubmas-music/releases/download/1.0.4/WubmasMusic-java-build9.zip"
+  sha1: "c95306c8633156a54fe101dafc25c5acab551d44"
+  delay-seconds: 2                 # how long after joining the pack is offered
+  prompt: "Wubmas music: a one-time download, then your game keeps it."     # on the screen that asks to allow it; "" for no text
+
+# Music from GitHub. The music builder (the wubmas-music repository on GitHub) turns the DJ files into the packs and a file called library.yml.
+# /wubmusic update downloads that file (and the Bedrock pack), checks them and switches the server to the new music: the sets and the Java pack in library.yml then
+# replace the ones in this file. Nothing is downloaded until you run the command. url is the link the builder's run summary shows (https only); "" = update is off.
+library:
+  url: "https://github.com/WubcraftMC/wubmas-music/releases/latest/download/library.yml"
+  bedrock: true                    # also put the Bedrock pack into Geyser's packs folder (Bedrock players get it after the next server restart); false if you have no Bedrock players
+  geyser-folder: "Geyser-Spigot"   # the folder in plugins/ that Geyser uses
+
+# To limit the music to the festival instead of a whole world: stand in the middle of it, in game, and run /wubmusic area set <radius>. (Kept in area.yml, not here.)
+worlds: []                         # empty = everybody online hears it; or list world names, e.g. [world, stage]
+
+# Inside the festival area (above), cushions cannot be punched, shot or blown up by anyone without the wubmasmusic.admin permission. Does nothing until an area is set.
+protect-cushions: true
+
+bossbar:
+  enabled: true                    # the purple bar with the DJ's name and how far through the set it is
+  title: "Now playing: {name}"
+
+# /wubmusic start <set> [seconds] counts down on the screen of everyone who would hear the music (not for players with /music off, in another world or outside the festival area):
+# the time left above the hotbar, then the last title-seconds seconds as a big number in the middle of the screen, then the set's name and "Now playing" when the music starts.
+# {name} is the DJ's name, {time} the time left (1:30, or 45 s). "" for any text = that part is not shown.
+countdown:
+  enabled: true                    # false = no countdown at all
+  title-seconds: 5                 # how many of the last seconds are a big number; 0 = no big numbers, only the line above the hotbar
+  actionbar-text: "{name} starts in {time}"     # above the hotbar until the big numbers start
+  subtitle: "{name}"               # under the big number
+  go-title: "{name}"               # in the middle of the screen when the music starts
+  go-subtitle: "Now playing"
+
+messages:
+  join: "{name} is on. The music joins in about {wait} seconds. /music off to mute it."     # sent to people who join during a set (to Java players once the pack has loaded); "" to turn off
+  pack-failed: "The Wubmas music pack did not load, so you will not hear the music. Type /music pack to try again (and allow server resource packs for this server if you turned them off)."     # "" to turn off
+
+# The lineup. start is in quotes, local time in the time zone above. id = the file name you give the pack tool.
+sets:
+  - {id: dxbuddha,      name: "DxBuddha",             start: "2026-12-19 14:00", pieces: 0}
+  - {id: yungsiete,     name: "Yung Siete",           start: "2026-12-19 14:30", pieces: 0}
+  - {id: gnarlie,       name: "Gnarlie",              start: "2026-12-19 15:15", pieces: 0}
+  - {id: frgmntd,       name: "FRGMNTD",              start: "2026-12-19 15:45", pieces: 0}
+  - {id: voydoom_moros, name: "Voydoom B2B Moros",    start: "2026-12-19 16:30", pieces: 0}
+  - {id: infrno,        name: "INFRNO",               start: "2026-12-19 17:00", pieces: 0}
+  - {id: jamesv,        name: "James V",              start: "2026-12-19 17:30", pieces: 0}
