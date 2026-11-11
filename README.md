@@ -67,3 +67,4 @@ Edit `lineup.json` here on GitHub (the pencil icon), then Commit changes. That s
 | `.github/workflows/build-music.yml` | the build, run by the button |
 | `scripts/` | download the sets, publish the release |
 | `tool/` | cuts the sets into pieces and makes the Java and Bedrock packs |
+| `tool/stage_assets/` | the CDJ and mixer models and textures; every build puts them into the Java pack, so do not delete them |

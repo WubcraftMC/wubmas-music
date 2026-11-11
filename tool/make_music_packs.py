@@ -146,7 +146,23 @@ def write_zip(path, entries):
             z.writestr(zi, data.read_bytes() if isinstance(data, Path) else data)
 
 
-def java_pack(path, sets, desc):
+STAGE_DIR = HERE / "stage_assets"   # the DJ models and textures (CDJs, mixer): the Java pack carries them next to the music
+
+
+def stage_entries(stage_dir):
+    """(name, Path) for every file under stage_dir, in a fixed order. Names are paths inside the pack and must start with assets/."""
+    if not stage_dir or not Path(stage_dir).is_dir(): return []
+    root, out = Path(stage_dir), []
+    for f in sorted(root.rglob("*"), key=lambda q: q.relative_to(root).as_posix()):
+        rel = f.relative_to(root).as_posix()
+        if not f.is_file() or any(part.startswith(".") for part in rel.split("/")): continue
+        if not rel.startswith("assets/"): raise ToolError(f"{f}: files in the stage_assets folder must be inside an 'assets' folder, as in a resource pack (assets/wubmas/models/...).")
+        if rel == "assets/minecraft/sounds.json": raise ToolError("stage_assets must not have its own assets/minecraft/sounds.json: the builder writes that one.")
+        out.append((rel, f))
+    return out
+
+
+def java_pack(path, sets, desc, stage=()):
     sounds, entries = {}, []
     for s in sets:
         for i in range(s["pieces"]):
@@ -155,7 +171,7 @@ def java_pack(path, sets, desc):
     # min_format / max_format cover every client since 1.21.9 (the final range for 26.x was not published when this was made); a client outside it would still load the pack
     mcmeta = {"pack": {"min_format": 97, "max_format": 200, "description": desc}}
     head = [("pack.mcmeta", (json.dumps(mcmeta, indent=2) + "\n").encode()), ("assets/minecraft/sounds.json", (json.dumps(sounds, indent=1) + "\n").encode())]
-    write_zip(path, head + entries)
+    write_zip(path, head + list(stage) + entries)
     return sounds
 
 
@@ -283,7 +299,7 @@ def test_set_for(p, taken):
     return {"id": sid, "name": f"Test: {pretty}" if pretty else f"Test: {sid}", "start": TEST_START, "test": True}
 
 
-def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, normalize=True, lineup_file=None, source="record", cap_mb=250, tail_min=2.0, end_fade=1.0, extra_lineup=None, quiet=False, demo=False, pack_url="", bedrock_url="", version=None, strict_ids=False, short_min=10.0):
+def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, normalize=True, lineup_file=None, source="record", cap_mb=250, tail_min=2.0, end_fade=1.0, extra_lineup=None, quiet=False, demo=False, pack_url="", bedrock_url="", version=None, strict_ids=False, short_min=10.0, stage_dir=None):
     sets_dir = Path(sets_dir); out = Path(out)
     if pack_url and not re.fullmatch(r"https?://[\x21-\x7e]{3,2000}", pack_url): raise ToolError(f"--pack-url must be a web address that starts with https:// and has no spaces or accents (got {pack_url!r}).")
     if bedrock_url and not re.fullmatch(r"https?://[\x21-\x7e]{3,2000}", bedrock_url): raise ToolError(f"--bedrock-url must be a web address that starts with https:// and has no spaces or accents (got {bedrock_url!r}).")
@@ -331,13 +347,14 @@ def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, 
             except Exception: version = 1
         desc = f"Wubmas music{' (DEMO)' if demo else ''}, build {version}"
         jp = out / "WubmasMusic-java.zip"; bp = out / "WubmasMusic-bedrock.mcpack"
-        sounds = java_pack(jp, sets, desc)
+        stage = stage_entries(STAGE_DIR if stage_dir is None else stage_dir)
+        sounds = java_pack(jp, sets, desc, stage)
         defs = bedrock_pack(bp, sets, desc, source, version, "wubmas-music-demo" if demo else "wubmas-music", "Wubmas Music (demo)" if demo else "Wubmas Music")
         vf.write_text(json.dumps({"n": version}))
         jsha = sha1(jp)
         write_config(out / "config.yml", HERE / "config-template.yml", lineup, built, source, piece, overlap, pack_url, jsha)
         if pack_url: write_library(out / "library.yml", lineup, built, piece, overlap, pack_url, jsha, bedrock_url, sha1(bp) if bedrock_url else "", bp.stat().st_size if bedrock_url else 0, version)
-        write_report(out / "REPORT.txt", sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs if normalize else None, lineup, pack_url, file_notes, file_warnings, 0 if demo else short_min)
+        write_report(out / "REPORT.txt", sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs if normalize else None, lineup, pack_url, file_notes, file_warnings, 0 if demo else short_min, len(stage))
         write_server_files(out, bp)
         return {"sets": sets, "java": jp, "bedrock": bp, "events": len(sounds), "version": version, "java_mb": jp.stat().st_size / 1e6, "bedrock_mb": bp.stat().st_size / 1e6, "lineup": lineup}
     finally:
@@ -363,7 +380,7 @@ def parse_start(t):
     return None
 
 
-def write_report(path, sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs, lineup=(), pack_url="", file_notes=(), file_warnings=(), short_min=10.0):
+def write_report(path, sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs, lineup=(), pack_url="", file_notes=(), file_warnings=(), short_min=10.0, stage_count=None):
     wid = max([16] + [len(s["id"]) + 2 for s in sets] + [len(n[0]) + 2 for n in file_notes])
     L = [f"WUBMAS MUSIC - build {version}", "", f"{'set':<{wid}}{'file':<24}{'length':>8}{'pieces':>8}{'size':>9}   loudness (before -> after)"]
     warnings = list(file_warnings)
@@ -393,6 +410,9 @@ def write_report(path, sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs
             L.append("  A test set is a file that is not a DJ's set. It never starts by itself: start it by hand with /wubmusic start <id> 0 (and /wubmusic stop).")
     jm, bm = jp.stat().st_size / 1e6, bp.stat().st_size / 1e6
     L += ["", f"Java pack:    {jm:.1f} MB   (the server limit for a resource pack is {cap_mb} MB)", f"Bedrock pack: {bm:.1f} MB   (every Bedrock player downloads this when they join, once per version)"]
+    if stage_count is not None:
+        L += [f"Stage models: {stage_count} files (CDJs, mixer) are in the Java pack" if stage_count else "Stage models: none"]
+        if not stage_count: warnings.append("The Java pack has no stage models (the stage_assets folder next to the tool is missing or empty), so the CDJs and the mixer show the pink-and-black missing texture in game.")
     if jm > cap_mb: warnings.append(f"The Java pack is {jm:.0f} MB, over the {cap_mb} MB limit. Use --kbps {max(48, int(kbps * cap_mb / jm * 0.9))} or fewer or shorter sets.")
     elif jm > cap_mb * 0.9: warnings.append(f"The Java pack is {jm:.0f} MB, close to the {cap_mb} MB limit.")
     if bm > 150: warnings.append(f"The Bedrock pack is {bm:.0f} MB. On a phone that is a long download at join time; consider --kbps {max(48, int(kbps * 120 / bm))}.")
@@ -468,6 +488,7 @@ def main(argv=None):
     ap.add_argument("--pack-url", default="", help="the web address the Java pack will be uploaded to; it goes into config.yml (with the pack's SHA-1) so there is nothing to paste in later")
     ap.add_argument("--bedrock-url", default="", help="the web address the Bedrock pack will be uploaded to (library.yml gets it with the pack's SHA-1; /wubmusic update downloads it from there into Geyser's packs folder)")
     ap.add_argument("--version", type=int, default=None, help="the Bedrock pack's version number (default: one more than the last build in the --out folder). A build server that starts from nothing every time must pass a number that only goes up, for example its run number")
+    ap.add_argument("--stage-assets", default=None, help="folder with the CDJ/mixer models and textures for the Java pack, laid out as in a resource pack (default: stage_assets next to this tool)")
     ap.add_argument("--short-minutes", type=float, default=10.0, help="warn when a DJ's file is shorter than this many minutes, because it is probably a song and not a set (0 = never warn)")
     ap.add_argument("--strict-ids", action="store_true", help="stop with an error when a file is not one of the DJs in lineup.json (instead of making it a test set that never starts by itself)")
     ap.add_argument("--demo", action="store_true", help="build a 2 minute made-up sound check set instead of reading a folder (needs numpy)")
@@ -481,7 +502,7 @@ def main(argv=None):
             tmp = tempfile.mkdtemp(prefix="wubmas_demo_"); make_demo(tmp); a.sets = tmp
         if not a.sets: ap.error("give the folder with the set files (or --demo)")
         r = build(a.sets, a.out, kbps=a.kbps, piece=a.piece, overlap=a.overlap, lufs=a.lufs, normalize=not a.no_normalize, lineup_file=a.lineup, source=a.source, cap_mb=a.cap_mb,
-                  extra_lineup=[{"id": "soundcheck", "name": "Sound check", "start": "2026-01-01 12:00"}] if a.demo else None, demo=a.demo, pack_url=a.pack_url.strip(), bedrock_url=a.bedrock_url.strip(), version=a.version, strict_ids=a.strict_ids, short_min=a.short_minutes)
+                  extra_lineup=[{"id": "soundcheck", "name": "Sound check", "start": "2026-01-01 12:00"}] if a.demo else None, demo=a.demo, pack_url=a.pack_url.strip(), bedrock_url=a.bedrock_url.strip(), version=a.version, strict_ids=a.strict_ids, short_min=a.short_minutes, stage_dir=a.stage_assets)
         if tmp: shutil.rmtree(tmp, ignore_errors=True)
     except ToolError as e:
         print("\nERROR: " + str(e), file=sys.stderr); return 1
