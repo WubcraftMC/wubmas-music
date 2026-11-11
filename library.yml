@@ -1,15 +1,15 @@
 # Written by the Wubmas music builder. /wubmusic update on the server downloads this file and uses it instead of the sets and the resource-pack in config.yml.
 # Do not edit it: the next update replaces it. (Delete it and run /wubmusic reload to go back to config.yml.)
-build: 10
-built: "2026-11-11 05:41 UTC"
+build: 11
+built: "2026-11-11 06:22 UTC"
 piece-seconds: 15
 overlap-seconds: 0.3
 resource-pack:
-  url: "https://raw.githubusercontent.com/WubcraftMC/wubmas-music/test-packs/t1/WubmasMusic-java.zip"
-  sha1: "ddbc4560c3b556f0106245ce69bb0147e9e39716"
+  url: "https://raw.githubusercontent.com/WubcraftMC/wubmas-music/test-packs/t2/WubmasMusic-java.zip"
+  sha1: "a32e68481760dfdc051abf04f444b72eeab98d3b"
 bedrock-pack:
-  url: "https://raw.githubusercontent.com/WubcraftMC/wubmas-music/test-packs/t1/WubmasMusic-bedrock.mcpack"
-  sha1: "19d249f4a699573676846f3a7e1d70cd79d2a8a9"
+  url: "https://raw.githubusercontent.com/WubcraftMC/wubmas-music/test-packs/t2/WubmasMusic-bedrock.mcpack"
+  sha1: "2ec557c3357bca8c4667bbe8bf3594bb47a597fb"
   bytes: 50447178
 sets:
   - {id: dxbuddha, name: "DxBuddha", start: "2026-12-19 14:00", pieces: 0}

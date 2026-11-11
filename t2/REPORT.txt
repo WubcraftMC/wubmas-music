@@ -1,0 +1,88 @@
+WUBMAS MUSIC - build 11
+
+set                             file                      length  pieces     size   loudness (before -> after)
+abandoned_destroyer_of_worlds   Abandoned_-_Destroyer_     3.9 m      16    1.9 MB   -7.4 -> -14.0 LUFS, peak -6.7 dBTP
+blanke_space_x_don_t_look_down  Blanke_Space_x_Don_t_L     4.4 m      18    2.1 MB   -5.7 -> -13.9 LUFS, peak -8.3 dBTP
+bossfight_hayve_deadlock        Bossfight___Hayve_-_De     3.5 m      14    1.7 MB   -4.5 -> -14.0 LUFS, peak -9.5 dBTP
+chainsmokers_jungle_ember_remi  Chainsmokers_-_Jungle_     2.7 m      11    1.3 MB   -3.7 -> -14.0 LUFS, peak -10.3 dBTP
+culture_code_far_away           Culture_Code_-_Far_Awa     4.1 m      17    1.9 MB   -9.7 -> -14.1 LUFS, peak -2.0 dBTP
+excision_wooli_the_devil_wears  Excision__Wooli____The     4.0 m      16    2.0 MB   -5.1 -> -14.1 LUFS, peak -2.9 dBTP
+falling_north_chptr_meggie_yor  Falling_North__CHPTR__     3.3 m      14    1.6 MB   -7.6 -> -14.0 LUFS, peak -6.4 dBTP
+hvlo_wish                       Hvlo_-_Wish.wav            4.3 m      17    2.0 MB   -8.3 -> -14.0 LUFS, peak -6.0 dBTP
+illenium_chandler_leighton_lon  ILLENIUM__Chandler_Lei     4.5 m      18    2.1 MB   -5.5 -> -13.9 LUFS, peak -8.5 dBTP
+illenium_dean_lewis_take_me_ba  ILLENIUM__Dean_Lewis_-     3.0 m      13    1.5 MB   -5.0 -> -14.0 LUFS, peak -9.0 dBTP
+illenium_mako_into_the_dark     ILLENIUM__MAKO_-_Into_     4.3 m      18    2.0 MB   -6.0 -> -13.9 LUFS, peak -8.0 dBTP
+illenium_spiritbox_shivering_i  ILLENIUM___Spiritbox_-     4.5 m      18    2.2 MB   -4.9 -> -14.0 LUFS, peak -9.1 dBTP
+lugh_watch_yo_mouth             LUGH__-_WATCH_YO_MOUTH     3.5 m      14    1.9 MB   -3.9 -> -14.0 LUFS, peak -10.1 dBTP
+moros_ruthless_2026             MOROS_-_RUTHLESS__2026     3.3 m      14    1.7 MB   -6.2 -> -13.9 LUFS, peak -7.8 dBTP
+nghtklr_soul_valient_ignition   NGHTKLR___SOUL_VALIENT     3.7 m      15    1.9 MB   -3.4 -> -14.0 LUFS, peak -10.6 dBTP
+nurko_monika_santucci_find_you  NURKO__Monika_Santucci     3.3 m      13    1.5 MB   -7.1 -> -14.0 LUFS, peak -6.9 dBTP
+nght_vision_give_me_a_bullet    Nght_Vision_-_Give_Me_     2.4 m      10    1.2 MB   -1.7 -> -14.0 LUFS, peak -12.3 dBTP
+rzrkt_freaky_damage             RZRKT__FREAKY_-_Damage     3.5 m      14    1.8 MB   -2.9 -> -14.0 LUFS, peak -3.9 dBTP
+ray_volpe_laserbeam             Ray_Volpe_-_Laserbeam.     3.7 m      15    1.9 MB   -3.7 -> -13.9 LUFS, peak -10.3 dBTP
+scarexx_push_the_scene          Scarexx_-_Push_The_Sce     2.7 m      11    1.3 MB   -3.0 -> -13.9 LUFS, peak -6.8 dBTP
+synymata_irrelevant_reprise     Synymata_-_Irrelevant_     5.1 m      21    2.4 MB   -7.5 -> -14.0 LUFS, peak -2.0 dBTP
+william_black_empty_space_bump  William_Black_-_Empty_     3.8 m      15    1.8 MB   -8.0 -> -14.0 LUFS, peak -6.0 dBTP
+william_black_whiplash_nikadem  William_Black_-_Whipla     3.8 m      16    1.9 MB   -5.7 -> -14.0 LUFS, peak -8.3 dBTP
+ydg_in_the_pit                  YDG_-_In_The_Pit.flac      3.4 m      14    1.7 MB   -3.6 -> -14.4 LUFS, peak -4.1 dBTP
+zombie_x_light_up_the_sky_x_bl  Zombie_x_Light_Up_The_     2.4 m      10    1.1 MB   -6.1 -> -14.0 LUFS, peak -7.9 dBTP
+illenium_krewella_slander_lay   _ILLENIUM___Krewella__     4.4 m      18    2.1 MB   -6.4 -> -14.0 LUFS, peak -7.6 dBTP
+illenium_x_excision_x_wooli_zo  _Illenium_x_Excision_x     4.7 m      19    2.2 MB   -6.0 -> -14.0 LUFS, peak -8.0 dBTP
+illenium_other_side_feat_vera   illenium_-_other_side_     3.4 m      14    1.7 MB   -7.7 -> -14.0 LUFS, peak -7.3 dBTP
+
+Which file is which:
+  dxbuddha                        DxBuddha                      no file yet, so this set has no music
+  yungsiete                       Yung Siete                    no file yet, so this set has no music
+  gnarlie                         Gnarlie                       no file yet, so this set has no music
+  frgmntd                         FRGMNTD                       no file yet, so this set has no music
+  voydoom_moros                   Voydoom B2B Moros             no file yet, so this set has no music
+  infrno                          INFRNO                        no file yet, so this set has no music
+  jamesv                          James V                       no file yet, so this set has no music
+  abandoned_destroyer_of_worlds   Test: Abandoned - Destroyer   Abandoned_-_Destroyer_Of_Worlds__Oppenheimer_.wav  (test set)
+  blanke_space_x_don_t_look_down  Test: Blanke Space x Don t L  Blanke_Space_x_Don_t_Look_Down_x_Just_A_Dream__Karmaxis_Mashup__2025_MASTER.wav  (test set)
+  bossfight_hayve_deadlock        Test: Bossfight Hayve - Dead  Bossfight___Hayve_-_Deadlock.wav  (test set)
+  chainsmokers_jungle_ember_remi  Test: Chainsmokers - Jungle   Chainsmokers_-_Jungle_EMBER_Remix.wav  (test set)
+  culture_code_far_away           Test: Culture Code - Far Awa  Culture_Code_-_Far_Away.wav  (test set)
+  excision_wooli_the_devil_wears  Test: Excision Wooli The Dev  Excision__Wooli____The_Devil_Wears_Prada_-_Reasons.wav  (test set)
+  falling_north_chptr_meggie_yor  Test: Falling North CHPTR Me  Falling_North__CHPTR__Meggie_York_-_Pages_of_Love.wav  (test set)
+  hvlo_wish                       Test: Hvlo - Wish             Hvlo_-_Wish.wav  (test set)
+  illenium_chandler_leighton_lon  Test: ILLENIUM Chandler Leig  ILLENIUM__Chandler_Leighton_-_Lonely.wav  (test set)
+  illenium_dean_lewis_take_me_ba  Test: ILLENIUM Dean Lewis -   ILLENIUM__Dean_Lewis_-_Take_Me_Back.wav  (test set)
+  illenium_mako_into_the_dark     Test: ILLENIUM MAKO - Into T  ILLENIUM__MAKO_-_Into_The_Dark.wav  (test set)
+  illenium_spiritbox_shivering_i  Test: ILLENIUM Spiritbox - S  ILLENIUM___Spiritbox_-_Shivering__INFRNO_x_INREALM_Remix_.wav  (test set)
+  lugh_watch_yo_mouth             Test: LUGH - WATCH YO MOUTH   LUGH__-_WATCH_YO_MOUTH_.wav  (test set)
+  moros_ruthless_2026             Test: MOROS - RUTHLESS 2026   MOROS_-_RUTHLESS__2026__.wav  (test set)
+  nghtklr_soul_valient_ignition   Test: NGHTKLR SOUL VALIENT -  NGHTKLR___SOUL_VALIENT_-_IGNITION__1___2_.wav  (test set)
+  nurko_monika_santucci_find_you  Test: NURKO Monika Santucci   NURKO__Monika_Santucci_-_Find_You__INFRNO_Remix__1_.wav  (test set)
+  nght_vision_give_me_a_bullet    Test: Nght Vision - Give Me   Nght_Vision_-_Give_Me_A_Bullet.wav  (test set)
+  rzrkt_freaky_damage             Test: RZRKT FREAKY - Damage   RZRKT__FREAKY_-_Damage_.wav  (test set)
+  ray_volpe_laserbeam             Test: Ray Volpe - Laserbeam   Ray_Volpe_-_Laserbeam.wav  (test set)
+  scarexx_push_the_scene          Test: Scarexx - Push The Sce  Scarexx_-_Push_The_Scene.mp3  (test set)
+  synymata_irrelevant_reprise     Test: Synymata - Irrelevant   Synymata_-_Irrelevant__Reprise_.wav  (test set)
+  william_black_empty_space_bump  Test: William Black - Empty   William_Black_-_Empty_Space_Bump__Remix.flac  (test set)
+  william_black_whiplash_nikadem  Test: William Black - Whipla  William_Black_-_Whiplash__Nikademis_Remix_.wav  (test set)
+  ydg_in_the_pit                  Test: YDG - In The Pit        YDG_-_In_The_Pit.flac  (test set)
+  zombie_x_light_up_the_sky_x_bl  Test: Zombie x Light Up The   Zombie_x_Light_Up_The_Sky_x_Blood_x__Karmaxis__v4.wav  (test set)
+  illenium_krewella_slander_lay   Test: ILLENIUM Krewella SLAN  _ILLENIUM___Krewella___SLANDER_-_Lay_It_Down.wav  (test set)
+  illenium_x_excision_x_wooli_zo  Test: Illenium x Excision x   _Illenium_x_Excision_x_Wooli_-_Zombie__ft__Valerie_Broussard_.wav  (test set)
+  illenium_other_side_feat_vera   Test: illenium - other side   illenium_-_other_side_feat__vera_blue__leuthero_remix__.wav  (test set)
+  A test set is a file that is not a DJ's set. It never starts by itself: start it by hand with /wubmusic start <id> 0 (and /wubmusic stop).
+
+Java pack:    51.3 MB   (the server limit for a resource pack is 250 MB)
+Bedrock pack: 50.4 MB   (every Bedrock player downloads this when they join, once per version)
+Stage models: 14 files (CDJs, mixer) are in the Java pack
+
+Warnings:
+  none
+
+Put these on the server:
+  1. Drag the folder 'server-files/plugins' (it is next to this report) onto the server's main folder and choose merge / replace.
+     It holds config.yml and the Bedrock pack already in the right folders (plugins/WubmasMusic/ and plugins/Geyser-Spigot/packs/) with the right names,
+     and it replaces the old Bedrock pack, so there is nothing to rename or delete. Then restart the server.
+  2. WubmasMusic-java.zip -> upload it where a direct download link works (a new GitHub release; use a file name you have not used before, or players keep their cached old pack).
+     The pack's SHA-1 is a32e68481760dfdc051abf04f444b72eeab98d3b and config.yml already has it.
+     config.yml also has the link https://raw.githubusercontent.com/WubcraftMC/wubmas-music/test-packs/t2/WubmasMusic-java.zip, so the file has to be at exactly that address.
+     Leave resource-pack= and resource-pack-sha1= EMPTY in server.properties (with the server stopped): the plugin sends the Java pack a moment after players join,
+     so nobody waits for it in the join screen. A player who has the same pack already (same SHA-1) downloads nothing.
+
+Timing: pieces of 15 s with 0.3 s overlap. config.yml must have the same piece-seconds and overlap-seconds (it does unless you changed them).
