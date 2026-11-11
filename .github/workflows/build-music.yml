@@ -1,0 +1,51 @@
+name: Build Wubmas music
+
+# Run it by hand: Actions tab, "Build Wubmas music", Run workflow. It also runs when lineup.json is edited.
+# It takes the DJ files from the private draft release "Wubmas music files" (and the music/ folder, if there is one), turns them into the Java pack and
+# the Bedrock pack, publishes both as a release called music-<number>, and keeps the newest three builds.
+on:
+  workflow_dispatch:
+    inputs:
+      kbps:
+        description: "Music quality in kbps. 64 is small and good for a game, 96 is better, 128 is large."
+        required: true
+        default: "64"
+  push:
+    paths:
+      - "lineup.json"
+
+concurrency:
+  group: build-music
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      TAG: music-${{ github.run_number }}
+      KBPS: ${{ inputs.kbps || '64' }}
+    steps:
+      - name: Get this repository
+        uses: actions/checkout@v4
+
+      - name: Install ffmpeg
+        run: sudo apt-get update -y && sudo apt-get install -y --no-install-recommends ffmpeg
+
+      - name: Get the music files
+        run: python3 scripts/fetch_sources.py "$REPO" sets --draft "Wubmas music files" --folder music
+
+      - name: Build the packs
+        run: |
+          python3 tool/make_music_packs.py sets --out build --lineup lineup.json --strict-ids --kbps "$KBPS" \
+            --pack-url "https://github.com/$REPO/releases/download/$TAG/WubmasMusic-java.zip" \
+            --bedrock-url "https://github.com/$REPO/releases/download/$TAG/WubmasMusic-bedrock.mcpack" \
+            --version "${{ github.run_number }}"
+
+      - name: Publish the release
+        run: python3 scripts/publish_release.py "$REPO" "$TAG" build --target "${{ github.sha }}"
