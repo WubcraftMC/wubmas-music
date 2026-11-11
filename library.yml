@@ -1,0 +1,49 @@
+# Written by the Wubmas music builder. /wubmusic update on the server downloads this file and uses it instead of the sets and the resource-pack in config.yml.
+# Do not edit it: the next update replaces it. (Delete it and run /wubmusic reload to go back to config.yml.)
+build: 10
+built: "2026-11-11 05:41 UTC"
+piece-seconds: 15
+overlap-seconds: 0.3
+resource-pack:
+  url: "https://raw.githubusercontent.com/WubcraftMC/wubmas-music/test-packs/t1/WubmasMusic-java.zip"
+  sha1: "ddbc4560c3b556f0106245ce69bb0147e9e39716"
+bedrock-pack:
+  url: "https://raw.githubusercontent.com/WubcraftMC/wubmas-music/test-packs/t1/WubmasMusic-bedrock.mcpack"
+  sha1: "19d249f4a699573676846f3a7e1d70cd79d2a8a9"
+  bytes: 50447178
+sets:
+  - {id: dxbuddha, name: "DxBuddha", start: "2026-12-19 14:00", pieces: 0}
+  - {id: yungsiete, name: "Yung Siete", start: "2026-12-19 14:30", pieces: 0}
+  - {id: gnarlie, name: "Gnarlie", start: "2026-12-19 15:15", pieces: 0}
+  - {id: frgmntd, name: "FRGMNTD", start: "2026-12-19 15:45", pieces: 0}
+  - {id: voydoom_moros, name: "Voydoom B2B Moros", start: "2026-12-19 16:30", pieces: 0}
+  - {id: infrno, name: "INFRNO", start: "2026-12-19 17:00", pieces: 0}
+  - {id: jamesv, name: "James V", start: "2026-12-19 17:30", pieces: 0}
+  - {id: abandoned_destroyer_of_worlds, name: "Test: Abandoned - Destroyer Of Worlds Oppenhei", start: "2099-01-01 00:00", pieces: 16, seconds: 235.109}
+  - {id: blanke_space_x_don_t_look_down, name: "Test: Blanke Space x Don t Look Down x Just A", start: "2099-01-01 00:00", pieces: 18, seconds: 261.547}
+  - {id: bossfight_hayve_deadlock, name: "Test: Bossfight Hayve - Deadlock", start: "2099-01-01 00:00", pieces: 14, seconds: 207.0}
+  - {id: chainsmokers_jungle_ember_remi, name: "Test: Chainsmokers - Jungle EMBER Remix", start: "2099-01-01 00:00", pieces: 11, seconds: 159.429}
+  - {id: culture_code_far_away, name: "Test: Culture Code - Far Away", start: "2099-01-01 00:00", pieces: 17, seconds: 246.4}
+  - {id: excision_wooli_the_devil_wears, name: "Test: Excision Wooli The Devil Wears Prada - R", start: "2099-01-01 00:00", pieces: 16, seconds: 240.0}
+  - {id: falling_north_chptr_meggie_yor, name: "Test: Falling North CHPTR Meggie York - Pages", start: "2099-01-01 00:00", pieces: 14, seconds: 197.6}
+  - {id: hvlo_wish, name: "Test: Hvlo - Wish", start: "2099-01-01 00:00", pieces: 17, seconds: 255.0}
+  - {id: illenium_chandler_leighton_lon, name: "Test: ILLENIUM Chandler Leighton - Lonely", start: "2099-01-01 00:00", pieces: 18, seconds: 270.0}
+  - {id: illenium_dean_lewis_take_me_ba, name: "Test: ILLENIUM Dean Lewis - Take Me Back", start: "2099-01-01 00:00", pieces: 13, seconds: 182.687}
+  - {id: illenium_mako_into_the_dark, name: "Test: ILLENIUM MAKO - Into The Dark", start: "2099-01-01 00:00", pieces: 18, seconds: 260.8}
+  - {id: illenium_spiritbox_shivering_i, name: "Test: ILLENIUM Spiritbox - Shivering INFRNO x", start: "2099-01-01 00:00", pieces: 18, seconds: 270.0}
+  - {id: lugh_watch_yo_mouth, name: "Test: LUGH - WATCH YO MOUTH", start: "2099-01-01 00:00", pieces: 14, seconds: 209.6}
+  - {id: moros_ruthless_2026, name: "Test: MOROS - RUTHLESS 2026", start: "2099-01-01 00:00", pieces: 14, seconds: 198.4}
+  - {id: nghtklr_soul_valient_ignition, name: "Test: NGHTKLR SOUL VALIENT - IGNITION 1 2", start: "2099-01-01 00:00", pieces: 15, seconds: 224.021}
+  - {id: nurko_monika_santucci_find_you, name: "Test: NURKO Monika Santucci - Find You INFRNO", start: "2099-01-01 00:00", pieces: 13, seconds: 195.0}
+  - {id: nght_vision_give_me_a_bullet, name: "Test: Nght Vision - Give Me A Bullet", start: "2099-01-01 00:00", pieces: 10, seconds: 141.2}
+  - {id: rzrkt_freaky_damage, name: "Test: RZRKT FREAKY - Damage", start: "2099-01-01 00:00", pieces: 14, seconds: 210.0}
+  - {id: ray_volpe_laserbeam, name: "Test: Ray Volpe - Laserbeam", start: "2099-01-01 00:00", pieces: 15, seconds: 221.6}
+  - {id: scarexx_push_the_scene, name: "Test: Scarexx - Push The Scene", start: "2099-01-01 00:00", pieces: 11, seconds: 160.891}
+  - {id: synymata_irrelevant_reprise, name: "Test: Synymata - Irrelevant Reprise", start: "2099-01-01 00:00", pieces: 21, seconds: 303.724}
+  - {id: william_black_empty_space_bump, name: "Test: William Black - Empty Space Bump Remix", start: "2099-01-01 00:00", pieces: 15, seconds: 225.0}
+  - {id: william_black_whiplash_nikadem, name: "Test: William Black - Whiplash Nikademis Remix", start: "2099-01-01 00:00", pieces: 16, seconds: 227.755}
+  - {id: ydg_in_the_pit, name: "Test: YDG - In The Pit", start: "2099-01-01 00:00", pieces: 14, seconds: 204.8}
+  - {id: zombie_x_light_up_the_sky_x_bl, name: "Test: Zombie x Light Up The Sky x Blood x Karm", start: "2099-01-01 00:00", pieces: 10, seconds: 144.222}
+  - {id: illenium_krewella_slander_lay, name: "Test: ILLENIUM Krewella SLANDER - Lay It Down", start: "2099-01-01 00:00", pieces: 18, seconds: 264.774}
+  - {id: illenium_x_excision_x_wooli_zo, name: "Test: Illenium x Excision x Wooli - Zombie ft", start: "2099-01-01 00:00", pieces: 19, seconds: 284.644}
+  - {id: illenium_other_side_feat_vera, name: "Test: illenium - other side feat vera blue leu", start: "2099-01-01 00:00", pieces: 14, seconds: 206.707}
