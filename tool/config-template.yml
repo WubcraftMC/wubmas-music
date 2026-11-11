@@ -18,10 +18,11 @@ sound:
   # stand there in game and run /wubmusic stage set [radius]  (kept in stage.yml). The radius is how far away it can still be heard (default 64): silent beyond it, half as loud halfway.
   # On Java the player's own game does the fading, so it costs the server nothing. false = the same volume everywhere, as before.
   fade: true
-  # A piece cannot be started in the middle, so a player who comes back (from another world, into the festival area, /music on, once their pack has loaded) would wait for the next one, up to 15 seconds.
-  # If the next piece is more than this many seconds away they get the piece that is playing at once, from its start: a few seconds behind the others, and the next piece puts them on the live position.
-  # 0 = never wait; 15 (or more) = always wait for the next piece, as before.
-  max-wait-seconds: 3
+  # A piece cannot be started in the middle, so a player who comes back (from another world, into the festival area, /music on, once their pack has loaded) would wait for the next one, up to a whole piece.
+  # If the next piece is more than this many seconds away they get the piece that is playing at once, from its start: behind the others by the time into the piece, and the next piece puts them on the live position.
+  # 0 = never wait; a whole piece or more = always wait for the next piece. Not set (the default): a quarter of a piece, at most 3 seconds, so it follows the piece length of the music build by itself
+  # (15 s pieces: 3 seconds, 6 s pieces: 1.5 seconds). Remove the # below to set it yourself.
+  # max-wait-seconds: 3
 
 # The Java resource pack. The plugin hands it to Java players a moment AFTER they have joined: they are in the world straight away and the game downloads it in the background
 # (it saves it, so it is a one-time download until the pack changes). Leave resource-pack= and resource-pack-sha1= EMPTY in server.properties, or they get it in the join screen too.
@@ -69,11 +70,14 @@ countdown:
   go-subtitle: "Now playing"
 
 # The CDJs on the DJ table show what is playing: a song's title and its artist, or the DJ's name, and when nothing plays the festival's name and when the next set is.
-# Set them up once: stand at the DJ table in game and run /wubmusic screens place. They are text displays lying on top of the CDJs; the plugin only rewrites their text when a set
-# starts or ends (nothing runs in between), so they cost the server nothing. Text the wrong way round? /wubmusic screens turn. /wubmusic screens remove takes them away.
-# Changed scale, width or background here? /wubmusic reload, then place them again.
+# They place themselves: once the stage point is set (/wubmusic stage set; or, with no stage point, the festival area) every CDJ within 40 blocks of it gets a screen, a minute at the
+# latest after the CDJs are there (the plugin looks when a set starts or ends and once a minute, never more often). They are text displays lying on top of the CDJs; the plugin only rewrites
+# their text when a set starts or ends (nothing runs in between), so they cost the server nothing. A table further away: stand at it and run /wubmusic screens place.
+# Text the wrong way round? /wubmusic screens turn. /wubmusic screens remove takes them away (with auto on they come back within a minute: set auto to false to stop that).
+# Changed scale, width or background here? /wubmusic reload, then /wubmusic screens place at the table (it replaces the old ones).
 screens:
   enabled: true                    # false = the plugin never writes to them, and place does nothing
+  auto: true                       # put a screen on every CDJ near the stage point (or the festival area's middle) by itself; false = only /wubmusic screens place does
   scale: 0.2                       # size of the text (1 = like a name tag); 0.05 to 2
   width: 100                       # how wide a line can get before it wraps, in text pixels; 20 to 400
   max-chars: 16                    # a longer line is cut and ends in ...; 4 to 60

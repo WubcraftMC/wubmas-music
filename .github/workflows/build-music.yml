@@ -13,7 +13,7 @@ on:
       piece:
         description: "Seconds per piece. Shorter pieces put a player who comes back, or walks into the stage area, in sync with the music sooner (6 = within about 4 seconds, 15 = within about 12) but have more joins between pieces; the pack is about 9 percent bigger at 6."
         required: true
-        default: "15"
+        default: "6"
   push:
     paths:
       - "lineup.json"
@@ -34,7 +34,7 @@ jobs:
       REPO: ${{ github.repository }}
       TAG: music-${{ github.run_number }}
       KBPS: ${{ inputs.kbps || '64' }}
-      PIECE: ${{ inputs.piece || '15' }}
+      PIECE: ${{ inputs.piece || '6' }}
     steps:
       - name: Get this repository
         uses: actions/checkout@v4
