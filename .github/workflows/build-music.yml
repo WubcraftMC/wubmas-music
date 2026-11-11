@@ -42,7 +42,7 @@ jobs:
 
       - name: Build the packs
         run: |
-          python3 tool/make_music_packs.py sets --out build --lineup lineup.json --strict-ids --kbps "$KBPS" \
+          python3 tool/make_music_packs.py sets --out build --lineup lineup.json --kbps "$KBPS" \
             --pack-url "https://github.com/$REPO/releases/download/$TAG/WubmasMusic-java.zip" \
             --bedrock-url "https://github.com/$REPO/releases/download/$TAG/WubmasMusic-bedrock.mcpack" \
             --version "${{ github.run_number }}"

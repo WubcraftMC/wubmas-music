@@ -3,7 +3,8 @@
 
   python make_music_packs.py SETS_FOLDER [--out build] [--kbps 96]
 
-SETS_FOLDER holds one audio file per set, named after the set id in lineup.json (dxbuddha.mp3, infrno.wav, voydoom_moros.flac ...).
+SETS_FOLDER holds the audio files, with any names. A file whose name is a DJ's id or name from lineup.json, or contains it ("DxBuddha - final mix.mp3"),
+is that DJ's set and starts on the DJ's time. Every other file becomes a test set ("Test: <file name>") that never starts by itself: /wubmusic start <id> 0.
 It writes into --out:
   WubmasMusic-java.zip       the Java resource pack (the server hands it to Java players)
   WubmasMusic-bedrock.mcpack the Bedrock pack (goes in Geyser's packs folder)
@@ -229,6 +230,58 @@ def set_id_for(p):
     return sid
 
 
+TEST_START = "2099-01-01 00:00"   # the start time of a file that is not a DJ's set: far away, so it never starts by itself (start it by hand: /wubmusic start <id> 0)
+
+
+def name_key(text):
+    """Letters and digits only, lower case: 'Yung Siete', 'yung_siete' and 'YUNG.SIETE' are all 'yungsiete'."""
+    return re.sub(r"[^a-z0-9]+", "", text.lower())
+
+
+def match_files(files, lineup):
+    """Decides which file is which DJ's set. A file is a DJ's when its name is the DJ's id or name (any capitals, spaces, dots or dashes), or contains it ('DxBuddha - Wubmas mix FINAL.mp3').
+    Anything else is a test set. A file that could be two DJs', or a DJ with two competing files, is never given a time slot: it becomes a test set and the report says so.
+    Returns (assigned {lineup id: (file, how)}, tests [file], warnings [text])."""
+    keys = {e["id"]: {k for k in (name_key(e["id"]), name_key(e["name"])) if k} for e in lineup}
+    exact, part, warnings, loose = {}, {}, [], []
+    for p in files:
+        k = name_key(p.stem)
+        ex = [i for i, ks in keys.items() if k in ks]
+        if ex: exact.setdefault(ex[0], []).append(p); continue
+        pt = [i for i, ks in keys.items() if any(len(x) >= 5 and x in k for x in ks)]
+        if len(pt) == 1: part.setdefault(pt[0], []).append(p)
+        elif len(pt) > 1:
+            warnings.append(f"{p.name} could be any of {', '.join(pt)}, so it is a test set and not on anyone's time slot. Rename it after one DJ.")
+            loose.append(p)
+        else: loose.append(p)
+    assigned, tests = {}, list(loose)
+    for i in keys:
+        e, pt = exact.get(i, []), part.get(i, [])
+        if len(e) == 1:
+            assigned[i] = (e[0], "by its name")
+            for p in pt: tests.append(p); warnings.append(f"{p.name} also looks like {i}'s, but {e[0].name} is the file used for {i}. {p.name} is a test set.")
+        elif len(e) > 1:
+            tests += e + pt; warnings.append(f"{i} has more than one file ({', '.join(p.name for p in e + pt)}). None of them has the {i} time slot, so {i} has no music. Delete the extra ones in the draft release.")
+        elif len(pt) == 1: assigned[i] = (pt[0], "its name is in the file name")
+        elif len(pt) > 1:
+            tests += pt; warnings.append(f"{i} has more than one file ({', '.join(p.name for p in pt)}). None of them has the {i} time slot, so {i} has no music. Delete the extra ones in the draft release.")
+    import difflib
+    names = {name_key(e["name"]): e["id"] for e in lineup}; names.update({name_key(e["id"]): e["id"] for e in lineup})
+    for p in sorted(loose, key=lambda q: q.name):
+        close = difflib.get_close_matches(name_key(p.stem), list(names), n=1, cutoff=0.75)
+        if close and names[close[0]] not in assigned: warnings.append(f"{p.name} looks like a spelling of {names[close[0]]} but does not match, so it is a test set and {names[close[0]]} has no music. Rename the file if it is {names[close[0]]}'s.")
+    return assigned, sorted(tests, key=lambda q: q.name), warnings
+
+
+def test_set_for(p, taken):
+    """A made-up set for a file that is not a DJ's: an id from the file name (short, lower case, never one that is taken) and the name 'Test: ...'."""
+    base = set_id_for(p)[:30].strip("_") or "track"
+    sid, n = base, 2
+    while sid in taken: sid = f"{base}_{n}"; n += 1
+    pretty = re.sub(r"[\s._]+", " ", p.stem).strip()[:40].strip()
+    return {"id": sid, "name": f"Test: {pretty}" if pretty else f"Test: {sid}", "start": TEST_START, "test": True}
+
+
 def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, normalize=True, lineup_file=None, source="record", cap_mb=250, tail_min=2.0, end_fade=1.0, extra_lineup=None, quiet=False, demo=False, pack_url="", bedrock_url="", version=None, strict_ids=False):
     sets_dir = Path(sets_dir); out = Path(out)
     if pack_url and not re.fullmatch(r"https?://[\x21-\x7e]{3,2000}", pack_url): raise ToolError(f"--pack-url must be a web address that starts with https:// and has no spaces or accents (got {pack_url!r}).")
@@ -241,22 +294,16 @@ def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, 
     if source not in ("record", "music"): raise ToolError("--source must be record or music")
     if not (48 <= kbps <= 320): raise ToolError("--kbps must be between 48 and 320 (Ogg Vorbis cannot go lower)")
     lineup = json.loads(Path(lineup_file or HERE / "lineup.json").read_text(encoding="utf-8")) + list(extra_lineup or [])
-    known = {e["id"] for e in lineup}
     files = sorted(p for p in sets_dir.iterdir() if p.is_file() and p.suffix.lower() in AUDIO and not p.name.startswith("."))
     if not files: raise ToolError(f"No audio files found in {sets_dir} (looking for {', '.join(sorted(AUDIO))}).")
-    ids = {}
-    for p in files:
-        sid = set_id_for(p)
-        if not sid or not ID.fullmatch(sid): raise ToolError(f"Cannot make a set id from the file name {p.name}. Use letters, digits and _ (for example infrno.wav).")
-        if sid in ids: raise ToolError(f"{p.name} and {ids[sid].name} are both the set '{sid}'. Keep one.")
-        ids[sid] = p
-    if strict_ids:
-        stray = sorted(f"{ids[sid].name} (set id '{sid}')" for sid in ids if sid not in known)
-        if stray: raise ToolError("These files do not match any set id in lineup.json: " + ", ".join(stray) + ". Rename them after the set ids (" + ", ".join(sorted(known)) + ") or add the DJ to lineup.json.")
-    for sid in sorted(ids):
-        if sid not in known:
-            lineup.append({"id": sid, "name": sid.replace("_", " ").title(), "start": "2026-12-19 12:00"})
-            if not quiet: say(f"Note: '{sid}' is not in lineup.json, so it is added with the start time 2026-12-19 12:00. Change it in config.yml.")
+    assigned, tests, file_warnings = match_files(files, lineup)
+    if strict_ids and tests: raise ToolError("These files do not match any DJ in lineup.json: " + ", ".join(p.name for p in tests) + ". Rename them after the DJs (" + ", ".join(e["id"] for e in lineup) + ") or add the DJ to lineup.json.")
+    ids = {i: p for i, (p, how) in assigned.items()}
+    taken = {e["id"] for e in lineup}
+    for p in tests:
+        e = test_set_for(p, taken); taken.add(e["id"]); lineup.append(e); ids[e["id"]] = p
+        if not quiet: say(f"Note: {p.name} is not a DJ's set, so it is the test set '{e['id']}'. It never starts by itself: /wubmusic start {e['id']} 0")
+    file_notes = [(e["id"], e["name"], ids[e["id"]].name if e["id"] in ids else None, assigned[e["id"]][1] if e["id"] in assigned else ("test set" if e.get("test") else None)) for e in lineup]
     out.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="wubmas_music_"))
     try:
@@ -289,7 +336,7 @@ def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, 
         jsha = sha1(jp)
         write_config(out / "config.yml", HERE / "config-template.yml", lineup, built, source, piece, overlap, pack_url, jsha)
         if pack_url: write_library(out / "library.yml", lineup, built, piece, overlap, pack_url, jsha, bedrock_url, sha1(bp) if bedrock_url else "", bp.stat().st_size if bedrock_url else 0, version)
-        write_report(out / "REPORT.txt", sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs if normalize else None, lineup, pack_url)
+        write_report(out / "REPORT.txt", sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs if normalize else None, lineup, pack_url, file_notes, file_warnings)
         write_server_files(out, bp)
         return {"sets": sets, "java": jp, "bedrock": bp, "events": len(sounds), "version": version, "java_mb": jp.stat().st_size / 1e6, "bedrock_mb": bp.stat().st_size / 1e6, "lineup": lineup}
     finally:
@@ -315,9 +362,9 @@ def parse_start(t):
     return None
 
 
-def write_report(path, sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs, lineup=(), pack_url=""):
+def write_report(path, sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs, lineup=(), pack_url="", file_notes=(), file_warnings=()):
     L = [f"WUBMAS MUSIC - build {version}", "", f"{'set':<16}{'file':<24}{'length':>8}{'pieces':>8}{'size':>9}   loudness (before -> after)"]
-    warnings = []
+    warnings = list(file_warnings)
     for s in sets:
         st = s["stats"]
         loud = f"{st['input_i']:.1f} -> {st.get('output_i', float('nan')):.1f} LUFS, peak {st.get('output_tp', float('nan')):.1f} dBTP" if st.get("normalized") else "not levelled"
@@ -328,13 +375,19 @@ def write_report(path, sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs
             if st["input_i"] < target - 12: warnings.append(f"{s['id']} was very quiet ({st['input_i']:.1f} LUFS); it has been turned up a lot, so check it for noise.")
         if s["duration"] > 3 * 3600: warnings.append(f"{s['id']} is over 3 hours.")
     by_id = {s["id"]: s for s in sets}
-    order = sorted((e for e in lineup if parse_start(e["start"])), key=lambda e: parse_start(e["start"]))
+    order = sorted((e for e in lineup if parse_start(e["start"]) and not e.get("test")), key=lambda e: parse_start(e["start"]))
     for a, b in zip(order, order[1:]):
         s = by_id.get(a["id"])
         if not s: continue
         slot = (parse_start(b["start"]) - parse_start(a["start"])).total_seconds()
         if s["seconds"] > slot + 1:
             warnings.append(f"{a['id']} is {s['seconds'] / 60:.1f} min long but {b['id']} starts {slot / 60:.1f} min after it, so the last {s['seconds'] - slot:.0f} s of {a['id']} will be cut off when {b['id']} starts.")
+    if file_notes:
+        L += ["", "Which file is which:"]
+        for sid, name, fname, how in file_notes:
+            L.append(f"  {sid:<16}{name[:28]:<30}" + (f"{fname}  ({how})" if fname else "no file yet, so this set has no music"))
+        if any(h == "test set" for _, _, _, h in file_notes):
+            L.append("  A test set is a file that is not a DJ's set. It never starts by itself: start it by hand with /wubmusic start <id> 0 (and /wubmusic stop).")
     jm, bm = jp.stat().st_size / 1e6, bp.stat().st_size / 1e6
     L += ["", f"Java pack:    {jm:.1f} MB   (the server limit for a resource pack is {cap_mb} MB)", f"Bedrock pack: {bm:.1f} MB   (every Bedrock player downloads this when they join, once per version)"]
     if jm > cap_mb: warnings.append(f"The Java pack is {jm:.0f} MB, over the {cap_mb} MB limit. Use --kbps {max(48, int(kbps * cap_mb / jm * 0.9))} or fewer or shorter sets.")
@@ -412,7 +465,7 @@ def main(argv=None):
     ap.add_argument("--pack-url", default="", help="the web address the Java pack will be uploaded to; it goes into config.yml (with the pack's SHA-1) so there is nothing to paste in later")
     ap.add_argument("--bedrock-url", default="", help="the web address the Bedrock pack will be uploaded to (library.yml gets it with the pack's SHA-1; /wubmusic update downloads it from there into Geyser's packs folder)")
     ap.add_argument("--version", type=int, default=None, help="the Bedrock pack's version number (default: one more than the last build in the --out folder). A build server that starts from nothing every time must pass a number that only goes up, for example its run number")
-    ap.add_argument("--strict-ids", action="store_true", help="stop with an error when a file's name is not a set id in lineup.json (instead of adding it with a made-up start time)")
+    ap.add_argument("--strict-ids", action="store_true", help="stop with an error when a file is not one of the DJs in lineup.json (instead of making it a test set that never starts by itself)")
     ap.add_argument("--demo", action="store_true", help="build a 2 minute made-up sound check set instead of reading a folder (needs numpy)")
     a = ap.parse_args(argv)
     try:

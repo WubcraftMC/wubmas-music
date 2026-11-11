@@ -22,28 +22,24 @@ GitHub's website only takes files up to 25 MB when you drop them into the reposi
 
 1. Releases, then **Draft a new release**.
 2. Release title: **Wubmas music files** (exactly like that; the builder looks for this name). For the tag, type any name, for example `dj-files`. It does not matter, because this release is never published.
-3. Drag the DJ files into the box that says to attach binaries. Name each file after the set it is (the ids are in `lineup.json`):
+3. Drag the music files into the box that says to attach binaries. **Any file name works, you never have to rename anything.** The builder looks at each name:
+   - A name that has a DJ's name in it is that DJ's set, and it plays at that DJ's time. `DxBuddha.mp3`, `Yung Siete.wav`, `gnarlie final mix v2.mp3` and `INFRNO - Wubmas set.flac` all work (capitals, spaces and dashes do not matter). The names it knows are in `lineup.json` (DxBuddha, Yung Siete, Gnarlie, FRGMNTD, Voydoom B2B Moros, INFRNO, James V).
+   - Any other file is a **test set**: any song, any name. It is in the lineup as "Test: <file name>" and it **never starts by itself**, so it can never play at the wrong moment. You start it by hand on the server with `/wubmusic start <id> 0` (press Tab after `start` to see the ids; the id is the file name in small letters with `_`, so `Jingle Bells.mp3` is `jingle_bells`) and stop it with `/wubmusic stop`. (Starting a test set stops whatever else is playing, so do not do it while a DJ is on.)
 
-   | file | DJ |
-   |---|---|
-   | `dxbuddha.mp3` | DxBuddha |
-   | `yungsiete.mp3` | Yung Siete |
-   | `gnarlie.mp3` | Gnarlie |
-   | `frgmntd.mp3` | FRGMNTD |
-   | `voydoom_moros.mp3` | Voydoom B2B Moros |
-   | `infrno.mp3` | INFRNO |
-   | `jamesv.mp3` | James V |
+   mp3, wav, flac, ogg and m4a all work. Wait until every file's bar is full.
 
-   mp3, wav, flac, ogg and m4a all work, and the file name before the dot is what counts. Wait until every file's bar is full.
+   Everything in the draft ends up in the packs that every player downloads, so do not put a whole library in. **A build takes up to 100 files and 8 GB**, and it stops in seconds with a message when there are more. About 40 songs is plenty for testing (a 5 minute song adds about 2.5 MB at quality 64, and the game does not accept a pack over 250 MB).
 4. Click **Save draft**. Not "Publish release": that would make the files public.
 
-To swap a file later, open the draft (Releases, the one marked Draft, Edit), click the cross next to the old file, drag the new one in, and Save draft again. You can add sets one at a time; a DJ who has no file yet stays in the lineup and the server tells you that set has no audio.
+To swap a file later, open the draft (Releases, the one marked Draft, Edit), click the cross next to the old file, drag the new one in, and Save draft again. You can add files one at a time; a DJ who has no file yet stays in the lineup and the server tells you that set has no audio.
+
+If a DJ's file has a different name than the one in `lineup.json` (a misspelling, a nickname), it becomes a test set and the DJ has no music. The build report tells you in its Warnings, and shows a "Which file is which" list, so read it once before the festival. Fix it by renaming the file in the draft, or by changing the name in `lineup.json`.
 
 ## Building
 
 Actions tab, **Build Wubmas music** on the left, **Run workflow** on the right, and press the green button. 64 is a good quality for a game (about 100 MB for seven half-hour sets); 96 sounds a little better and makes a bigger download for every player.
 
-When the run has a green tick, open it. The summary at the bottom shows the **link** for `library.url` and the report: each set's length and loudness, the size of the packs, and warnings (for example a set that is longer than its slot, which would be cut off when the next DJ starts). A red cross means it stopped; open the red step and read the last lines. The messages say what is wrong (a file named wrongly, no draft release found, and so on).
+When the run has a green tick, open it. The summary at the bottom shows the **link** for `library.url` and the report: each set's length and loudness, which file went to which DJ, the size of the packs, and warnings (for example a set that is longer than its slot, which would be cut off when the next DJ starts). A red cross means it stopped; open the red step and read the last lines. The messages say what is wrong (no draft release found, a file that is not music, and so on).
 
 ## On the server
 
@@ -55,7 +51,7 @@ When the run has a green tick, open it. The summary at the bottom shows the **li
 
 ## Changing names or times
 
-Edit `lineup.json` here on GitHub (the pencil icon), then Commit changes. That starts a build by itself. After it finishes, run `/wubmusic update`.
+Edit `lineup.json` here on GitHub (the pencil icon), then Commit changes. That starts a build by itself. After it finishes, run `/wubmusic update`. The names in `lineup.json` are also what the file names are matched against, so a DJ who goes by another name needs the name changed here (or their file renamed).
 
 ## Where the files are
 

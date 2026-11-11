@@ -54,17 +54,30 @@ def find_draft(items, name):
     return drafts[0], []            # GitHub lists the newest first
 
 
-def fetch_draft(repo, name, dest, say=print):
+MAX_FILES = 100          # everything in the draft ends up in the packs that every player downloads, and the build computer has about 14 GB of room
+MAX_BYTES = 8_000_000_000
+
+
+def fetch_draft(repo, name, dest, say=print, max_files=MAX_FILES, max_bytes=MAX_BYTES):
     rel, seen = find_draft(all_releases(repo), name)
     if rel is None:
         say(f'No draft release called "{name}" in {repo}' + (f" (releases I can see: {', '.join(seen)})" if seen else " (this repository has no releases I can see)") + ".")
         return []
-    got = []
+    got, usable = [], []
     for a in sorted(rel.get("assets") or [], key=lambda a: a.get("name", "")):
         n = a.get("name", "")
         if a.get("state") not in (None, "uploaded"): say(f"  skipped {n}: its upload is not finished"); continue
         if Path(n).suffix.lower() not in AUDIO: say(f"  skipped {n}: not an audio file"); continue
         if not SAFE_NAME.fullmatch(n): say(f"  skipped {n!r}: the name has characters I will not use as a file name"); continue
+        usable.append(a)
+    total = sum(int(a.get("size") or 0) for a in usable)
+    if len(usable) > max_files or total > max_bytes:
+        raise Fail(f'The draft release "{name}" has {len(usable)} music files ({total / 1e9:.1f} GB). The builder takes at most {max_files} files and {max_bytes / 1e9:g} GB, '
+                   "because every file in the draft ends up in the music packs that all players download (a 5 minute song adds about 2.5 MB, and the game does not accept a pack over 250 MB), "
+                   "and because GitHub's build computer has only about 14 GB of room. Nothing was downloaded. "
+                   "Take some files out of the draft (Releases, the one marked Draft, Edit, click the x next to a file, Save draft) and run the workflow again.")
+    for a in usable:
+        n = a.get("name", "")
         target = Path(dest) / n; part = Path(dest) / (n + ".part")
         with open(part, "wb") as f: gh(["api", "-H", "Accept: application/octet-stream", f"repos/{repo}/releases/assets/{int(a['id'])}"], to_file=f)
         if a.get("size") is not None and part.stat().st_size != a["size"]:
