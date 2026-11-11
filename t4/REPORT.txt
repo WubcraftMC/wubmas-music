@@ -1,0 +1,39 @@
+WUBMAS MUSIC - build 14
+
+set             file                      length  pieces     size   loudness (before -> after)
+soundcheck      soundcheck.wav             2.0 m      20    0.8 MB   -14.0 -> -14.0 LUFS, peak -2.0 dBTP
+
+Which file is which:
+  dxbuddha        DxBuddha                      no file yet, so this set has no music
+  yungsiete       Yung Siete                    no file yet, so this set has no music
+  gnarlie         Gnarlie                       no file yet, so this set has no music
+  frgmntd         FRGMNTD                       no file yet, so this set has no music
+  voydoom_moros   Voydoom B2B Moros             no file yet, so this set has no music
+  infrno          INFRNO                        no file yet, so this set has no music
+  jamesv          James V                       no file yet, so this set has no music
+  soundcheck      Sound check                   soundcheck.wav  (by its name)
+
+Java pack:    1.8 MB   (the server limit for a resource pack is 250 MB)
+Bedrock pack: 0.8 MB   (every Bedrock player downloads this when they join, once per version)
+Java layout:  split - every piece is in the Java pack as a left and a right channel (mono, 40 kbps each), which the plugin plays from two speakers at the stage, so the stereo stays and the music gets quieter the further a player walks from the stage
+              (Bedrock players get the stereo pieces, and the fade in steps). Needs WubmasMusic 1.7.0 or newer and a stage point: /wubmusic stage set, standing at the middle of the stage and facing the dance floor.
+Stage models: 14 files (CDJs, mixer) are in the Java pack
+Light map:    lights.txt, 1 KB, 1 set (the stage lights follow the beat, the bars, the breaks and the drops)
+  soundcheck       127.9 BPM    256 beats   0 breaks   1 drops   steady 57%
+
+Warnings:
+  none
+
+Put these on the server:
+  1. Drag the folder 'server-files/plugins' (it is next to this report) onto the server's main folder and choose merge / replace.
+     It holds config.yml and the Bedrock pack already in the right folders (plugins/WubmasMusic/ and plugins/Geyser-Spigot/packs/) with the right names,
+     and it replaces the old Bedrock pack, so there is nothing to rename or delete. Then restart the server.
+  2. WubmasMusic-java.zip -> upload it where a direct download link works (a new GitHub release; use a file name you have not used before, or players keep their cached old pack).
+     The pack's SHA-1 is 116cb23adccbd951228373144a26843adf2b083e and config.yml already has it.
+     config.yml also has the link https://raw.githubusercontent.com/WubcraftMC/wubmas-music/test-packs/t4/WubmasMusic-java.zip, so the file has to be at exactly that address.
+     Leave resource-pack= and resource-pack-sha1= EMPTY in server.properties (with the server stopped): the plugin sends the Java pack a moment after players join,
+     so nobody waits for it in the join screen. A player who has the same pack already (same SHA-1) downloads nothing.
+  3. lights.txt -> upload it where a direct download link works, at exactly https://raw.githubusercontent.com/WubcraftMC/wubmas-music/test-packs/t4/lights.txt (the same website as library.yml; /wubmusic update downloads it and checks it against the SHA-1 in library.yml).
+     It is also in server-files/plugins/WubmasMusic/, so step 1 already puts this build's light map on the server.
+
+Timing: pieces of 6 s with 0.3 s overlap. config.yml must have the same piece-seconds and overlap-seconds (it does unless you changed them).

@@ -1,19 +1,19 @@
 # Written by the Wubmas music builder. /wubmusic update on the server downloads this file and uses it instead of the sets and the resource-pack in config.yml.
 # Do not edit it: the next update replaces it. (Delete it and run /wubmusic reload to go back to config.yml.)
-build: 13
-built: "2026-11-11 20:34 UTC"
-piece-seconds: 15
+build: 14
+built: "2026-11-11 21:42 UTC"
+piece-seconds: 6
 overlap-seconds: 0.3
 resource-pack:
-  url: "https://raw.githubusercontent.com/WubcraftMC/wubmas-music/test-packs/t3/WubmasMusic-java.zip"
-  sha1: "5b79c9c4bb708907323f80ed32797c52d21f0f4a"
+  url: "https://raw.githubusercontent.com/WubcraftMC/wubmas-music/test-packs/t4/WubmasMusic-java.zip"
+  sha1: "116cb23adccbd951228373144a26843adf2b083e"
   layout: split
 bedrock-pack:
-  url: "https://raw.githubusercontent.com/WubcraftMC/wubmas-music/test-packs/t3/WubmasMusic-bedrock.mcpack"
-  sha1: "713f474265a43bce28bd6d49e78d0322c30287c6"
-  bytes: 708645
+  url: "https://raw.githubusercontent.com/WubcraftMC/wubmas-music/test-packs/t4/WubmasMusic-bedrock.mcpack"
+  sha1: "be9efc04b09049030761b7a1aa1055ce417d190a"
+  bytes: 781355
 lights:
-  url: "https://raw.githubusercontent.com/WubcraftMC/wubmas-music/test-packs/t3/lights.txt"
+  url: "https://raw.githubusercontent.com/WubcraftMC/wubmas-music/test-packs/t4/lights.txt"
   sha1: "d75ef5afb6d08db74a33210fcd3cefcfcb87a312"
   bytes: 1495
 sets:
@@ -24,4 +24,4 @@ sets:
   - {id: voydoom_moros, name: "Voydoom B2B Moros", start: "2026-12-19 16:30", pieces: 0}
   - {id: infrno, name: "INFRNO", start: "2026-12-19 17:00", pieces: 0}
   - {id: jamesv, name: "James V", start: "2026-12-19 17:30", pieces: 0}
-  - {id: soundcheck, name: "Sound check", start: "2026-01-01 12:00", pieces: 8, seconds: 120.0}
+  - {id: soundcheck, name: "Sound check", start: "2026-01-01 12:00", pieces: 20, seconds: 120.0}
