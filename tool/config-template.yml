@@ -59,15 +59,20 @@ bossbar:
   title: "Now playing: {name}"
 
 # /wubmusic start <set> [seconds] counts down on the screen of everyone who would hear the music (not for players with /music off, in another world or outside the festival area):
-# the time left above the hotbar, then the last title-seconds seconds as a big number in the middle of the screen, then the set's name and "Now playing" when the music starts.
-# {name} is the DJ's name, {time} the time left (1:30, or 45 s). "" for any text = that part is not shown.
+# the time left above the hotbar, then the last title-seconds seconds as a big number in the middle of the screen, then "Now playing" when the music starts.
+# Only the number is big: a title is drawn 4 times and a subtitle 2 times the size of normal text, so a long name there (a test song's "Artist - Title") fills the screen.
+# With compact on (the default) the name stays in the small line above the hotbar, and "Now playing: <name>" is that line too. compact: false brings back the big name in the middle of the screen
+# (then subtitle, go-title and go-subtitle are used; with compact on they are not).
+# {name} is the DJ's name (cut to 32 characters in the small line), {time} the time left (1:30, or 45 s). "" for any text = that part is not shown.
 countdown:
   enabled: true                    # false = no countdown at all
   title-seconds: 5                 # how many of the last seconds are a big number; 0 = no big numbers, only the line above the hotbar
-  actionbar-text: "{name} starts in {time}"     # above the hotbar until the big numbers start
-  subtitle: "{name}"               # under the big number
-  go-title: "{name}"               # in the middle of the screen when the music starts
-  go-subtitle: "Now playing"
+  compact: true                    # true = only the number is big, the name is in the small line; false = the name is big too (subtitle, go-title and go-subtitle below)
+  actionbar-text: "{name} starts in {time}"     # the small line above the hotbar, every second of the countdown (with compact off: until the big numbers start)
+  go-actionbar: "Now playing: {name}"           # the small line when the music starts (compact on)
+  subtitle: "{name}"               # compact off: under the big number
+  go-title: "{name}"               # compact off: in the middle of the screen when the music starts
+  go-subtitle: "Now playing"       # compact off: under it
 
 # The CDJs on the DJ table show what is playing: a song's title and its artist, or the DJ's name, and when nothing plays the festival's name and when the next set is.
 # They place themselves: once the stage point is set (/wubmusic stage set; or, with no stage point, the festival area) every CDJ within 40 blocks of it gets a screen, a minute at the
