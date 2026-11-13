@@ -1,0 +1,58 @@
+name: Build Wubmas lights only
+
+# Run once after a full music build made with the updated tools. Reuses that
+# build's audio; players keep their existing Java and Bedrock packs.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: build-music
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  lights:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      LIGHT_ASSET: lights-${{ github.run_id }}-${{ github.run_attempt }}.txt
+    steps:
+      - name: Get this repository
+        uses: actions/checkout@v4
+
+      - name: Install analysis tools
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          python3 -m pip install --disable-pip-version-check PyYAML==6.0.3
+
+      - name: Get the published music metadata
+        run: |
+          LIGHT_BASE_TAG="$(gh api "repos/$REPO/releases/latest" --jq .tag_name)"
+          [[ "$LIGHT_BASE_TAG" =~ ^music-[0-9]+$ ]] || { echo 'Latest release is not a music build.'; exit 1; }
+          echo "LIGHT_BASE_TAG=$LIGHT_BASE_TAG" >> "$GITHUB_ENV"
+          gh release download "$LIGHT_BASE_TAG" --repo "$REPO" --pattern library.yml --pattern light-sources.json --dir base \
+            || { echo 'Run a full music build with the updated tools first: light-sources.json is required.'; exit 1; }
+
+      - name: Get the same source music
+        run: python3 scripts/fetch_sources.py "$REPO" sets --draft "Wubmas music files" --folder music
+
+      - name: Analyse the lights without rebuilding packs
+        run: |
+          python3 tool/make_lights_only.py sets --library base/library.yml --sources base/light-sources.json \
+            --out lights-build --repo "$REPO" --tag "$LIGHT_BASE_TAG" --asset "$LIGHT_ASSET"
+
+      - name: Publish only the light map and its metadata
+        run: |
+          CURRENT_TAG="$(gh api "repos/$REPO/releases/latest" --jq .tag_name)"
+          [ "$CURRENT_TAG" = "$LIGHT_BASE_TAG" ] || { echo 'The published music changed. Nothing was published; run this workflow again.'; exit 1; }
+          # Publish a unique map first; the final metadata upload switches readers
+          # to it. Previous library.yml downloads still refer to their old map.
+          gh release upload "$LIGHT_BASE_TAG" "lights-build/$LIGHT_ASSET" --repo "$REPO"
+          gh release upload "$LIGHT_BASE_TAG" lights-build/LIGHT-REPORT.md --clobber --repo "$REPO"
+          gh release upload "$LIGHT_BASE_TAG" lights-build/library.yml --clobber --repo "$REPO"
+          cat lights-build/REPORT.txt >> "$GITHUB_STEP_SUMMARY"

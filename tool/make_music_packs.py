@@ -469,11 +469,14 @@ def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, 
     file_notes = [(e["id"], e["name"], ids[e["id"]].name if e["id"] in ids else None, assigned[e["id"]][1] if e["id"] in assigned else ("test set" if e.get("test") else None)) for e in lineup]
     out.mkdir(parents=True, exist_ok=True)
     lm = load_lightmap() if lights else None
+    if lm is not None and not all(callable(getattr(lm, name, None)) for name in ("report_markdown", "hit_report", "hit_warnings")):
+        raise ToolError("Update tool/lightmap.py with the matching builder files before running this build (the per-song report helpers are missing).")
     light_sets, light_warnings = {}, []
     if lights and lm is None: light_warnings.append("lightmap.py is not next to this tool, so there are no lights (the music is built without a light map).")
     work = Path(tempfile.mkdtemp(prefix="wubmas_music_"))
     try:
         built, report = {}, []
+        light_sources = {}
         for e in lineup:
             sid = e["id"]
             if sid not in ids: continue
@@ -481,9 +484,13 @@ def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, 
             if not quiet: say(f"[{sid}] reading {src.name} ...")
             wav = work / f"{sid}.wav"
             st = to_wav(src, wav, normalize, lufs, tp)
+            source_hash = hashlib.sha256()
+            with src.open("rb") as source_file:
+                for block in iter(lambda: source_file.read(1 << 20), b""): source_hash.update(block)
             with wave.open(str(wav), "rb") as w: dur = w.getnframes() / SR
             if dur < 2.0: raise ToolError(f"{src.name} is only {dur:.1f} seconds long.")
             count, seconds = plan(dur, piece, tail_min)
+            light_sources[sid] = {"file": src.name, "sha256": source_hash.hexdigest(), "seconds": seconds}
             if not quiet: say(f"[{sid}] {dur / 60:.1f} min, cutting into {count} pieces of {piece:g} s and encoding at {kbps} kbps ...")
             cache = {}
             def shorts(kb):
@@ -534,15 +541,20 @@ def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, 
         for old in out.glob("WubmasMusic-bedrock-v*.zip"): old.unlink()      # (never leave the link pack of an earlier build next to this build's)
         if bedrock_remote:
             brz = out / f"WubmasMusic-bedrock-v{version}.zip"; brz_longest = bedrock_remote_zip(bp, brz)
+        # A lights-only rebuild must use the very same source bytes and decoding settings.
         jsha = sha1(jp)
+        (out / "light-sources.json").write_text(json.dumps({"format": 1, "java-sha1": jsha, "bedrock-sha1": sha1(bp), "normalize": normalize, "lufs": lufs, "tp": tp, "sets": light_sources}, indent=2) + "\n", encoding="utf-8")
         lf = out / "lights.txt"
         if lf.exists(): lf.unlink()                       # (never leave the map of an earlier build next to this build's music)
+        light_report = out / "LIGHT-REPORT.md"
+        if light_report.exists(): light_report.unlink()
         light_info = None
         if lm is not None:
             if light_sets: lf.write_text(lm.format_map(light_sets), encoding="utf-8")
             else: light_warnings.append("No light map was made: none of the sets gave a beat to follow. The lights stay as they are, and the music is not affected.")
             if lights_url and not light_sets: light_warnings.append("--lights-url was given but there is no light map, so library.yml has no lights entry.")
             light_info = {"sets": light_sets, "file": lf if light_sets else None, "url": lights_url if light_sets else "", "warnings": light_warnings}
+            light_report.write_text(lm.report_markdown(light_sets, [s['id'] for s in sets]), encoding="utf-8")
         elif lights: light_info = {"sets": {}, "file": None, "url": "", "warnings": light_warnings}
         write_config(out / "config.yml", HERE / "config-template.yml", lineup, built, source, piece, overlap, pack_url, jsha, java_layout, long_piece if ratio else 0.0, bedrock_long_piece if bratio else 0.0, bedrock_remote=bedrock_remote)
         lurl = lights_url if light_sets else ""
@@ -634,6 +646,11 @@ def write_report(path, sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs
             for sid in (s["id"] for s in sets):
                 r = ls.get(sid)
                 L.append(f"  {sid:<{wid}}" + (f"{r['bpm']:>6.1f} BPM {r['beats']:>6} beats {r['breaks']:>3} breaks {r['drops']:>3} drops   steady {r['steady'] * 100:.0f}%" if r else "no lights"))
+                if r:
+                    lm_report = load_lightmap()
+                    if lm_report is not None:
+                        L.append("    " + lm_report.hit_report(r))
+                        warnings += [sid + ": " + w for w in lm_report.hit_warnings(r)]
         else:
             L += ["Light map:    none (see the warnings)"]
         warnings += lights["warnings"]

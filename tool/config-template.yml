@@ -111,6 +111,7 @@ screens:
 lights:
   enabled: true                    # false = no lights from the music (/wubmusic lights on|off does the same and is remembered in lights.yml)
   pulse: true                      # false = no pulse on the kick (/wubmusic lights pulse on|off does the same and is remembered in lights.yml)
+  hit-pulses: true                 # detected bass hits drive pulses when present; false = tempo-grid pulses. /wubmusic reload to compare. Hits stay at least 0.4 s apart
   offset-ms: 0                     # lights later (+) or earlier (-) than the music, -1000 to 1000
   max-late-ms: 150                 # a beat, bar or phrase cue that is later than this (the server stalled) is dropped, not played out of step; a break or a drop may be 4 times as late
   max-commands-per-tick: 1         # at most this many commands in one tick; the rest go out in the next ticks. 1 spreads the work over several ticks, so a cue never puts all its commands into one (each command redraws every light)

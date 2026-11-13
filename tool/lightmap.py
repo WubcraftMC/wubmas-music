@@ -16,14 +16,16 @@ level a hundred times a second; the rest is plain Python:
   4. every beat's time is then moved to the exact kick (to the millisecond) and given a level 0-3 (0 = no kick there, 3 = a hard one);
   5. breaks (8 beats or more without a kick) and drops (the kick coming back after one);
   6. bars (every 4 beats) and phrases (every 8 bars), counted from the start, from every break and drop, and from every place where the beat jumps
-     (a new track mixed in).
+     (a new track mixed in);
+  7. actual bass hits, independent of the tempo grid, spaced at least 400 ms apart for pulses (the grid still drives bars and phrases).
 
 The result is a text file that WubmasMusic reads (format below). It is a plain list: nothing in it can run a command by itself.
 """
 import array, math, operator, re, shutil, subprocess, sys
+from bisect import bisect_left, bisect_right
 from itertools import accumulate
 
-FORMAT = 1
+FORMAT = 2                  # hit tokens need WubmasMusic 1.14.0 or newer; install the plugin before rebuilding/downloading maps
 FPS = 100                    # analysis frames a second
 MIN_BPM, MAX_BPM = 75.0, 175.0
 PRIOR_BPM, PRIOR_OCT = 125.0, 0.7       # a weak preference for house-like tempos (the tempo is the most likely of the possible ones, never forced)
@@ -32,8 +34,10 @@ BREAK_BEATS = 8              # this many beats in a row without a kick is a brea
 LEVEL_EDGES = (0.12, 0.45, 0.75)   # beat strength against the strong beats of the set: below the first = no kick, then levels 1, 2, 3
 JUMP = 0.15                  # a beat interval 15% off the local one starts a new bar count (a new track, a changed tempo)
 REFINE_MS = 28               # a beat is moved at most this far to land on its kick
-TOKEN = re.compile(r"(\d{1,9})([abcABCZPDK])")
-LETTERS = "abcABCZPDK"
+HIT_PEAK_GAP_MS = 150        # do not count the kick's ringing as another hit
+HIT_GAP_MS = 400             # at most 2.5 hit pulses per second; never lower this
+TOKEN = re.compile(r"(\d{1,9})([abcABCZPDKhH])")
+LETTERS = "abcABCZPDKhH"
 
 
 class AnalysisError(Exception):
@@ -209,6 +213,66 @@ def refine(beats, fine, spread_ms=REFINE_MS):
     return out
 
 
+# ------------------------------------------------------------------ real bass hits (not the tempo grid)
+def hit_peaks(fine):
+    """(ms, relative strength) of distinct rises in the 1 ms kick curve.
+    Use the same peak-index + 1 ms time estimator as refine(). Peaks must stand
+    3x above their local median (+-100 ms); the strongest wins within 150 ms.
+    Strength is relative to the 85th percentile of those distinct peaks.
+    """
+    peaks = []
+    for i in range(1, len(fine) - 1):
+        s = fine[i]
+        if s <= 0 or s <= fine[i - 1] or s < fine[i + 1]: continue
+        window = sorted(fine[max(0, i - 100):i + 101])
+        if s >= 3.0 * window[len(window) // 2]: peaks.append((i + 1, s))
+    # Non-maximum suppression, in strength order. Exactly 150 ms apart is allowed.
+    chosen, times = [], []
+    for t, s in sorted(peaks, key=lambda x: (-x[1], x[0])):
+        j = bisect_left(times, t)
+        if j and t - times[j - 1] < HIT_PEAK_GAP_MS: continue
+        if j < len(times) and times[j] - t < HIT_PEAK_GAP_MS: continue
+        times.insert(j, t); chosen.append((t, s))
+    ref = _pct([s for _, s in chosen], 0.85)
+    if ref <= 1e-9: return []
+    return sorted((t, s / ref) for t, s in chosen if s / ref >= LEVEL_EDGES[1])
+
+
+def thin_hits(hits, gap_ms=HIT_GAP_MS):
+    """Weighted-interval scheduling: keep the greatest total strength with
+    at least gap_ms between hits, rather than greedily taking the first hit.
+    The 400 ms floor also applies if a caller supplies a smaller gap.
+    """
+    gap_ms = max(HIT_GAP_MS, gap_ms)
+    hits = sorted(hits)
+    times = [t for t, _ in hits]
+    best, prev, take = [0.0] * (len(hits) + 1), [], []
+    for i, (t, s) in enumerate(hits):
+        p = bisect_right(times, t - gap_ms, 0, i)
+        use = best[p] + s
+        prev.append(p); take.append(use > best[i])
+        best[i + 1] = use if take[-1] else best[i]
+    out, i = [], len(hits)
+    while i:
+        if take[i - 1]: out.append(hits[i - 1]); i = prev[i - 1]
+        else: i -= 1
+    return list(reversed(out))
+
+
+def build_hits(fine, grid_tokens):
+    """Hit tokens, outside [break, drop) intervals, then safely spaced.
+    Filter breaks before scheduling so a discarded hit cannot crowd out one
+    just before a break or just after a drop. An unclosed break lasts to EOF.
+    """
+    structural = [(t, k) for t, k in grid_tokens if k in "KD"]
+    candidates, j, inside = [], 0, False
+    for t, s in hit_peaks(fine):
+        while j < len(structural) and structural[j][0] <= t:
+            inside = structural[j][1] == "K"; j += 1
+        if not inside: candidates.append((t, s))
+    return [(t, "H" if s >= LEVEL_EDGES[2] else "h") for t, s in thin_hits(candidates)]
+
+
 # ------------------------------------------------------------------ levels, breaks, drops
 def levels(ref_beats):
     """Level 0-3 of every beat, from the size of its kick against the strong beats of the set."""
@@ -379,6 +443,9 @@ def analyze(src, ffmpeg=default_ffmpeg):
         local = sorted(gaps[i - 8:i - 1])[3]
         if abs(gaps[i - 1] - local) > JUMP * local and lv[i] >= 2 and lv[i - 1] >= 2 and i not in inside: jumps.append(i)
     tokens = build_tokens(times, lv, breaks, drops, jumps, inside)
+    # Stable sort: structural cues, phrases and grid bars precede a hit at the
+    # same time, so holds and the bar's current colour are already in place.
+    tokens = sorted(tokens + build_hits(fine, tokens), key=lambda x: x[0])
     steady = periodicity(onset)
     kicks = sum(1 for v in lv if v >= 2)
     if steady < 0.09 and not warnings: warnings.append("no steady beat in this one (it may be speech or noise): the lights may drift against the music")
@@ -387,11 +454,69 @@ def analyze(src, ffmpeg=default_ffmpeg):
             "steady": round(steady, 3), "warnings": warnings, "times": times, "levels": lv}
 
 
+# ------------------------------------------------------------------ build diagnostics (mapped hits, not rendered flashes)
+def hit_summary(result):
+    """Counts only the emitted h/H stream; gap includes intro, breaks and outro.
+    Server holds, strength thresholds, TPS and cue budgets can reduce actual pulses.
+    These diagnostics never modify detection or map tokens.
+    """
+    end = max(0, int(round(float(result['seconds']) * 1000)))
+    hits = sorted((int(t), k) for t, k in result['tokens'] if k in ('h', 'H') and 0 <= t <= end)
+    times = [0] + [t for t, _ in hits] + [end]
+    start, finish = max(zip(times, times[1:]), key=lambda pair: pair[1] - pair[0])
+    return {'hits': len(hits), 'level2_hits': sum(k == 'h' for _, k in hits), 'level3_hits': sum(k == 'H' for _, k in hits),
+            'hits_per_minute': round(len(hits) * 60000 / end, 1) if end else 0.0,
+            'longest_gap_ms': finish - start, 'gap_start_ms': start, 'gap_end_ms': finish}
+
+
+def hit_warnings(result):
+    s = hit_summary(result)
+    warnings = []
+    if not s['hits']: warnings.append('No detected-hit cues; this track uses beat-grid fallback.')
+    elif s['hits_per_minute'] < 20: warnings.append(f"Sparse mapped hits ({s['hits_per_minute']:.1f}/min); review this track by ear.")
+    if s['longest_gap_ms'] >= 10000:
+        warnings.append(f"{s['longest_gap_ms'] / 1000:.1f} s gap without mapped hits; check whether this is an intended intro, break or outro.")
+    return warnings
+
+
+def _clock(ms):
+    tenths = int(round(ms / 100))
+    return f'{tenths // 600:02d}:{tenths % 600 / 10:04.1f}'
+
+
+def hit_report(result):
+    s = hit_summary(result)
+    return (f"{s['hits']} mapped hits ({s['hits_per_minute']:.1f}/min; {s['level2_hits']} level 2, {s['level3_hits']} level 3); "
+            f"longest gap {s['longest_gap_ms'] / 1000:.1f} s ({_clock(s['gap_start_ms'])} to {_clock(s['gap_end_ms'])})")
+
+
+def report_markdown(results, set_ids=None):
+    """A complete per-track report for both normal and lights-only builds."""
+    lines = ['## Per-song light report', '',
+             'Counts are mapped hit cues, not measured flashes. Server holds, level thresholds and lag protection can reduce pulses. Longest gaps include intros, breaks and outros.', '',
+             '| Set | Mapped hits | Hits/min | Level 2 / 3 | Longest gap | Gap position |',
+             '| --- | ---: | ---: | ---: | ---: | --- |']
+    notes = []
+    for sid in (set_ids if set_ids is not None else results):
+        result = results.get(sid)
+        label = str(sid).replace('|', '\\|').replace('\n', ' ')
+        if result is None:
+            lines.append(f'| {label} | unavailable | — | — | — | No usable light map |')
+            notes.append(f'{label}: no usable light map; lights cannot follow this set.')
+            continue
+        s = hit_summary(result)
+        lines.append(f"| {label} | {s['hits']} | {s['hits_per_minute']:.1f} | {s['level2_hits']} / {s['level3_hits']} | {s['longest_gap_ms'] / 1000:.1f} s | {_clock(s['gap_start_ms'])}–{_clock(s['gap_end_ms'])} |")
+        notes.extend(f'{label}: {w}' for w in hit_warnings(result))
+    if notes: lines += ['', 'Review notes:', ''] + ['- ' + note for note in notes]
+    lines += ['', 'This is offline analysis. Visual timing and Java/Bedrock playback still need an in-game check.']
+    return '\n'.join(lines) + '\n'
+
+
 # ------------------------------------------------------------------ the file
 def format_set(sid, res):
     """One set's lines of the file: `set ID SECONDS BPM`, then the tokens, 20 to a line. A token is the milliseconds since the one before (the first: since 0) and a letter:
     a b c = a beat of level 1 2 3; A B C = the first beat of a bar, level 1 2 3; Z = the first beat of a bar with no kick; P = the first bar of a phrase (just before its
-    A B C Z); D = the kick comes back after a break; K = a break begins."""
+    A B C Z); D = the kick comes back after a break; K = a break begins; h H = a detected bass hit of level 2 3 (not a bar)."""
     lines = [f"set {sid} {res['seconds']:.1f} {res['bpm']:.1f}"]
     prev = 0
     toks = []
@@ -419,7 +544,7 @@ def parse_map(text):
         if not line or line.startswith("#"): continue
         p = line.split()
         if not seen:
-            if p != ["wubmas-lights", str(FORMAT)]: raise ValueError(f"line {n}: not a light map (it must start with 'wubmas-lights {FORMAT}')")
+            if len(p) != 2 or p[0] != "wubmas-lights" or p[1] not in ("1", str(FORMAT)): raise ValueError(f"line {n}: not a light map (it must start with 'wubmas-lights 1' or 'wubmas-lights {FORMAT}')")
             seen = True; continue
         if p[0] == "set" and len(p) == 4:
             cur = {"seconds": float(p[2]), "bpm": float(p[3]), "tokens": [], "_t": 0}

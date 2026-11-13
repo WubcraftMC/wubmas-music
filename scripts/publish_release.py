@@ -43,6 +43,8 @@ def main(argv=None):
         lib = (b / "library.yml").read_text(encoding="utf-8")
         if f"releases/download/{a.tag}/" not in lib: raise Fail(f"library.yml does not point at the release {a.tag}, so the server would download the wrong files.")
         files = list(FILES)
+        if (b / "light-sources.json").is_file(): files.append("light-sources.json")
+        if (b / "LIGHT-REPORT.md").is_file(): files.append("LIGHT-REPORT.md")
         if re.search(r"^lights:", lib, re.M):        # (the build has a light map, and library.yml tells the server where to get it)
             if not (b / "lights.txt").is_file(): raise Fail("library.yml has a light map but the build folder has no lights.txt, so the server's update would find nothing at that address.")
             if f"releases/download/{a.tag}/lights.txt" not in lib: raise Fail(f"library.yml's light map is not at the release {a.tag}, so the server would download the wrong file.")
@@ -63,6 +65,7 @@ def main(argv=None):
         link = f"https://github.com/{a.repo}/releases/latest/download/library.yml"
         summ = os.environ.get("GITHUB_STEP_SUMMARY")
         text = f"### Wubmas music build {a.tag.split('-')[1]} is ready\n\nOn the server: `/wubmusic update`\n\nThe link for `library.url` in the plugin's config.yml (only needed once):\n\n`{link}`\n"
+        if (b / "LIGHT-REPORT.md").is_file(): text += "\n" + (b / "LIGHT-REPORT.md").read_text(encoding="utf-8")
         if summ: Path(summ).open("a", encoding="utf-8").write(text + "\n")
         print("\nOn the server run /wubmusic update.\nlibrary.url for config.yml (only needed once): " + link)
     except Fail as e:
