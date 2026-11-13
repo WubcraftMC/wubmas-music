@@ -1,0 +1,76 @@
+name: Build Wubmas music
+
+# Run it by hand: Actions tab, "Build Wubmas music", Run workflow. It also runs when lineup.json is edited (with the values below as they are).
+# It takes the DJ files from the private draft release "Wubmas music files" (and the music/ folder, if there is one), turns them into the Java pack and
+# the Bedrock pack, finds the beats of every set for the stage lights (lights.txt), publishes them as a release called music-<number>, and keeps the newest three builds.
+on:
+  workflow_dispatch:
+    inputs:
+      kbps:
+        description: "Music quality in kbps. 64 is small and good for a game, 96 is better, 128 is large."
+        required: true
+        default: "64"
+      piece:
+        description: "Seconds per piece. Shorter pieces put a player who comes back, or walks into the stage area, in sync with the music sooner but have more joins between pieces, and the pack is bigger. 2 is what the test packs used. The plugin reads this from library.yml, so there is nothing to change on the server."
+        required: true
+        default: "2"
+      long_piece:
+        description: "Java long pieces, in seconds: a whole number of pieces, at most 120 (0 = none). Players who are in step get one long piece for many short ones, so the tiny timing error of a start comes that much more rarely. Needs WubmasMusic 1.10.0 or newer."
+        required: true
+        default: "120"
+      bedrock_long_piece:
+        description: "The same for Bedrock players (phones and consoles), usually shorter than the Java ones. 30 is what was tested. 0 = none. Needs WubmasMusic 1.11.0 or newer."
+        required: true
+        default: "30"
+      bedrock_kbps:
+        description: "Music quality of the Bedrock pack in kbps. Phones download the whole pack when they join, so smaller is kinder to them and to the server's network. 48 is the lowest possible."
+        required: true
+        default: "48"
+  push:
+    paths:
+      - "lineup.json"
+
+concurrency:
+  group: build-music
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      TAG: music-${{ github.run_number }}
+      KBPS: ${{ inputs.kbps || '64' }}
+      PIECE: ${{ inputs.piece || '2' }}
+      LONG_PIECE: ${{ inputs.long_piece || '120' }}
+      BEDROCK_LONG_PIECE: ${{ inputs.bedrock_long_piece || '30' }}
+      BEDROCK_KBPS: ${{ inputs.bedrock_kbps || '48' }}
+      RUN_NUMBER: ${{ github.run_number }}
+    steps:
+      - name: Get this repository
+        uses: actions/checkout@v4
+
+      - name: Install ffmpeg
+        run: sudo apt-get update -y && sudo apt-get install -y --no-install-recommends ffmpeg
+
+      - name: Get the music files
+        run: python3 scripts/fetch_sources.py "$REPO" sets --draft "Wubmas music files" --folder music
+
+      # The Bedrock pack's version is the run number plus 100. A phone remembers a Bedrock pack by its id and version, and a new pack must have a higher version than the
+      # one it has. The packs made by hand for the tests went up to the 30s, so the numbers here start at 101 (run 1) and go up with every run.
+      - name: Build the packs
+        run: |
+          python3 tool/make_music_packs.py sets --out build --lineup lineup.json --kbps "$KBPS" --piece "$PIECE" \
+            --long-piece "$LONG_PIECE" --bedrock-long-piece "$BEDROCK_LONG_PIECE" --bedrock-kbps "$BEDROCK_KBPS" \
+            --pack-url "https://github.com/$REPO/releases/download/$TAG/WubmasMusic-java.zip" \
+            --bedrock-url "https://github.com/$REPO/releases/download/$TAG/WubmasMusic-bedrock.mcpack" \
+            --lights-url "https://github.com/$REPO/releases/download/$TAG/lights.txt" \
+            --version "$((RUN_NUMBER + 100))"
+
+      - name: Publish the release
+        run: python3 scripts/publish_release.py "$REPO" "$TAG" build --target "${{ github.sha }}"
