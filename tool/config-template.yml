@@ -8,6 +8,13 @@ timezone: America/Los_Angeles      # the times below are read in this time zone
 # How the sets were cut. These must match what the pack tool used (its defaults are these numbers).
 piece-seconds: 15                  # length of one piece; a multiple of 0.05
 overlap-seconds: 0.3               # how much two pieces overlap at a join
+# Long pieces (Java, stereo pack only). A player who is already there gets pieces this long, so a seam (the tiny random timing error every start has) comes this much more rarely.
+# A player who joins in the middle of a long piece first gets the short ones, which are close to the live position, and switches to the long ones at the next long boundary.
+# Must be a whole number of piece-seconds (6 s pieces + 30 s long pieces). 0 = no long pieces. The music builder writes this into library.yml for you (--long-piece 30); with a library.yml only that value counts.
+long-piece-seconds: 0
+# The same for Bedrock players (phones, consoles): their pack has its own long pieces, which can be shorter than the Java ones (an old phone or console may not like very long files). Bedrock plays the sound flat, so its volume
+# (the fade with the distance from the stage) is set when a piece starts: with long pieces it changes only at a long boundary, with short ones every piece. Also written into library.yml by the builder (--bedrock-long-piece 30).
+bedrock-long-piece-seconds: 0
 late-limit-ms: 500                 # a piece that is more than this late (the server stalled) is skipped, not played out of step
 
 sound:
@@ -37,7 +44,7 @@ resource-pack:
   # How the Java pack holds each piece: "stereo" = one stereo sound (Minecraft plays a stereo sound at the player's ears, so it is the same volume
   # everywhere and the stage fade does nothing for Java players); "split" = the left and the right channel as two sounds, played from a left and a
   # right speaker at the stage (/wubmusic stage set), so the music gets quieter as a player walks away and the stereo stays.
-  # The music builder writes "split" into library.yml and /wubmusic update switches to it; set it here only for a pack you made yourself.
+  # The music builder writes the layout into library.yml and /wubmusic update switches to it; set it here only for a pack you made yourself. Long pieces need "stereo".
   layout: stereo
 
 # Music from GitHub. The music builder (the wubmas-music repository on GitHub) turns the DJ files into the packs and a file called library.yml.

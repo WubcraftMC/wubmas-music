@@ -8,8 +8,9 @@ is that DJ's set and starts on the DJ's time. Every other file becomes a test se
 It writes into --out:
   WubmasMusic-java.zip       the Java resource pack (the server hands it to Java players)
   WubmasMusic-bedrock.mcpack the Bedrock pack (goes in Geyser's packs folder)
+  WubmasMusic-bedrock-vN.zip with --bedrock-remote: the same Bedrock pack for a web link (Geyser's resource-pack-urls), so the server does not send it to the players
   lights.txt                 when the stage lights follow the music: where every beat, bar, break and drop of every set is (found by lightmap.py, next to this script)
-  server-files/              config.yml, lights.txt and the Bedrock pack in the server's own folder layout: drag its plugins folder onto the server
+  server-files/              config.yml, lights.txt and the Bedrock pack (not with --bedrock-remote) in the server's own folder layout: drag its plugins folder onto the server
   config.yml                 the WubmasMusic plugin config with the sets, piece counts and lengths filled in
   REPORT.txt                 sizes, loudness, warnings, and the server.properties lines
 
@@ -134,20 +135,53 @@ def plan(duration, piece, tail_min):
     return n, round(n * piece, 3)
 
 
-def encode_pieces(wav_path, out_dir, set_id, piece, half, count, kbps, end_fade, channel=None):
-    """Writes p0000.ogg ... for one set. Piece i covers [i*piece - half, (i+1)*piece + half] and fades in and out over 2*half so that, started 'half' early by the plugin, the overlaps add up to the original.
+BASS_HZ = 400          # below this pitch the pieces are joined by a short hard switch instead of a crossfade (see join_graph)
+SWITCH_S = 0.005       # how long that switch takes
+PRE_S = 0.5            # audio read before and after a piece so that the bass filter has settled where the piece begins and ends
+
+
+def join_graph(i, count, dur, half, hz, end_fade, pre_frames, n_frames):
+    """The ffmpeg filter graph that makes piece i of `count` when the joins are bass-switched.
+    Two sounds that the game starts a few milliseconds apart and that overlap in a crossfade add up with a time shift, and the bass of the two cancels for a moment (the "dip", "the low end cut out").
+    So the sound is split at `hz`: the part above it crossfades over the whole overlap as always, the part below it (the bass) is hard-switched from one piece to the next in SWITCH_S in the middle of the overlap, so that two copies of the bass are hardly ever heard together.
+    The part below is a zero-phase low pass (a 2nd order low pass run forwards and then backwards, so it delays nothing) and the part above is the original minus the same low pass, so when the pieces start exactly on time everything adds up to the original again.
+    (A filter that delays the sound leaves part of the bass in the part above, and that part is crossfaded again.)
+    The audio starts pre_frames before the piece and goes on after it so that the filter has settled; n_frames of it are kept."""
+    ramp, s = 2 * half, SWITCH_S
+    trim = f"atrim=start_sample={pre_frames}:end_sample={pre_frames + n_frames},asetpts=PTS-STARTPTS"
+    hi, lo, post = [trim], [trim], []
+    if i > 0:
+        hi.append(f"afade=t=in:st=0:d={ramp:.4f}:curve=tri")
+        lo.append(f"afade=t=in:st={half - s / 2:.4f}:d={s:.4f}:curve=tri")
+    if i < count - 1:
+        hi.append(f"afade=t=out:st={dur - ramp:.4f}:d={ramp:.4f}:curve=tri")
+        lo.append(f"afade=t=out:st={dur - half - s / 2:.4f}:d={s:.4f}:curve=tri")
+    if i == count - 1 and end_fade > 0: post.append(f"afade=t=out:st={max(0.0, dur - end_fade):.4f}:d={min(end_fade, dur):.4f}")
+    return (f"[0:a]asplit=2[x][y];[x]lowpass=f={hz:g}:poles=2,areverse,lowpass=f={hz:g}:poles=2,areverse,asplit=2[l1][l2];"
+            f"[y][l1]amerge=inputs=2,pan=stereo|c0=c0-c2|c1=c1-c3,{','.join(hi)}[h];"
+            f"[l2]{','.join(lo)}[b];"
+            f"[b][h]amerge=inputs=2,pan=stereo|c0=c0+c2|c1=c1+c3{''.join(',' + f for f in post)}[o]")
+
+
+def encode_pieces(wav_path, out_dir, set_id, piece, half, count, kbps, end_fade, channel=None, prefix="p", end_s=None, bass_hz=0):
+    """Writes p0000.ogg ... for one set (prefix="long": long0000.ogg ..., the long pieces; end_s: where the audio of the set ends, in seconds, so that the last long piece ends where the last short one does). Piece i covers [i*piece - half, (i+1)*piece + half] and fades in and out over 2*half so that, started 'half' early by the plugin, the overlaps add up to the original.
+    bass_hz > 0 (stereo pieces only): the pieces are joined with a bass switch, see join_graph.
     channel=None writes the stereo pieces; "l" or "r" writes the left or the right channel alone as a mono piece (p0000_l.ogg, p0000_r.ogg), for the Java pack's split layout."""
     if channel not in (None, "l", "r"): raise ValueError("channel is None, 'l' or 'r'")
     files = []
     with wave.open(str(wav_path), "rb") as w:
         assert w.getframerate() == SR and w.getnchannels() == 2 and w.getsampwidth() == 2
         total = w.getnframes()
+        if end_s is not None: total = min(total, round(end_s * SR))
         ramp = 2 * half
         for i in range(count):
             a = max(0, round((i * piece - half) * SR))
             b = min(total, round(((i + 1) * piece + half) * SR))
-            w.setpos(a)
-            raw = w.readframes(b - a)
+            switch = bass_hz > 0 and not channel and ramp > 0
+            pre = min(a, round(PRE_S * SR)) if switch else 0
+            post = min(total - b, round(PRE_S * SR)) if switch else 0
+            w.setpos(a - pre)
+            raw = w.readframes(b - a + pre + post)
             dur = (b - a) / SR
             filters = []
             if i > 0 and ramp > 0: filters.append(f"afade=t=in:st=0:d={ramp:.4f}:curve=tri")
@@ -155,19 +189,23 @@ def encode_pieces(wav_path, out_dir, set_id, piece, half, count, kbps, end_fade,
             if i == count - 1 and end_fade > 0: filters.append(f"afade=t=out:st={max(0.0, dur - end_fade):.4f}:d={min(end_fade, dur):.4f}")
             if channel: filters.insert(0, "pan=mono|c0=c0" if channel == "l" else "pan=mono|c0=c1")
             args = ["-y", "-f", "s16le", "-ar", str(SR), "-ac", "2", "-i", "-"]
-            if filters: args += ["-af", ",".join(filters)]
-            f = Path(out_dir) / set_id / (f"p{i:04d}.ogg" if not channel else f"p{i:04d}_{channel}.ogg")
+            if switch: args += ["-filter_complex", join_graph(i, count, dur, half, bass_hz, end_fade, pre, b - a), "-map", "[o]"]
+            elif filters: args += ["-af", ",".join(filters)]
+            f = Path(out_dir) / set_id / (f"{prefix}{i:04d}.ogg" if not channel else f"{prefix}{i:04d}_{channel}.ogg")
             f.parent.mkdir(parents=True, exist_ok=True)
             args += ["-c:a", "libvorbis", "-b:a", f"{kbps}k", "-ar", str(SR), "-ac", "1" if channel else "2", "-fflags", "+bitexact", "-flags:a", "+bitexact", str(f)]
             rc, _, err = run_ffmpeg(args, data=raw)
             if rc != 0 or not f.exists():
-                raise ToolError(f"ffmpeg could not encode piece {i + 1} of {set_id}:\n{err.strip()[-600:]}")
+                raise ToolError(f"ffmpeg could not encode {'long ' if prefix != 'p' else ''}piece {i + 1} of {set_id}:\n{err.strip()[-600:]}")
             files.append(f)
     return files
 
 
 # ------------------------------------------------------------------ packs
 def ev(set_id, i): return f"wubmas.{set_id}.p{i:04d}"
+def ev_long(set_id, k): return f"wubmas.{set_id}.long{k:04d}"
+def ev_blong(set_id, k): return f"wubmas.{set_id}.blong{k:04d}"       # a Bedrock long piece (its length is bedrock-long-piece-seconds, not necessarily the Java one)
+def long_count(count, ratio): return -(-count // ratio)       # how many long pieces hold `count` short ones (the last one may be shorter)
 
 
 LAYOUTS = ("split", "stereo")
@@ -203,10 +241,15 @@ def stage_entries(stage_dir):
 
 def java_pack(path, sets, desc, stage=(), layout="stereo"):
     """layout "stereo": one stereo sound per piece (Minecraft plays a stereo sound at the player's ears: the same volume everywhere). "split": the left and the right channel as two mono sounds per piece
-    (wubmas.<set>.pNNNN.l and .r, from p<NNNN>_l.ogg and _r.ogg), which the plugin plays from a left and a right speaker at the stage so that the game fades them with the distance."""
+    (wubmas.<set>.pNNNN.l and .r, from p<NNNN>_l.ogg and _r.ogg), which the plugin plays from a left and a right speaker at the stage so that the game fades them with the distance.
+    A set with "files_long" (stereo only) also has its long pieces, wubmas.<set>.longNNNN; its short pieces for Java are then "files_java" (a lower bitrate, they are only heard by players who joined a moment ago) if it has them."""
     if layout not in LAYOUTS: raise ToolError(f"the Java layout is split or stereo (got {layout!r})")
     sounds, entries = {}, []
     for s in sets:
+        if s.get("files_long") and layout != "stereo": raise ToolError("long pieces need the stereo Java layout")
+        for k, f in enumerate(s.get("files_long") or []):
+            sounds[ev_long(s["id"], k)] = {"sounds": [{"name": f"wubmas/{s['id']}/long{k:04d}", "stream": True}]}
+            entries.append((f"assets/minecraft/sounds/wubmas/{s['id']}/long{k:04d}.ogg", f))
         for i in range(s["pieces"]):
             if layout == "split":
                 for ch, key in (("l", "files_l"), ("r", "files_r")):
@@ -214,7 +257,7 @@ def java_pack(path, sets, desc, stage=(), layout="stereo"):
                     entries.append((f"assets/minecraft/sounds/wubmas/{s['id']}/p{i:04d}_{ch}.ogg", s[key][i]))
                 continue
             sounds[ev(s["id"], i)] = {"sounds": [{"name": f"wubmas/{s['id']}/p{i:04d}", "stream": True}]}
-            entries.append((f"assets/minecraft/sounds/wubmas/{s['id']}/p{i:04d}.ogg", s["files"][i]))
+            entries.append((f"assets/minecraft/sounds/wubmas/{s['id']}/p{i:04d}.ogg", (s.get("files_java") or s["files"])[i]))
     # min_format / max_format cover every client since 1.21.9 (the final range for 26.x was not published when this was made); a client outside it would still load the pack
     mcmeta = {"pack": {"min_format": 97, "max_format": 200, "description": desc}}
     head = [("pack.mcmeta", (json.dumps(mcmeta, indent=2) + "\n").encode()), ("assets/minecraft/sounds.json", (json.dumps(sounds, indent=1) + "\n").encode())]
@@ -228,6 +271,9 @@ def bedrock_pack(path, sets, desc, category, version, key="wubmas-music", title=
         for i in range(s["pieces"]):
             defs[ev(s["id"], i)] = {"category": category, "sounds": [{"name": f"sounds/wubmas/{s['id']}/p{i:04d}", "stream": True, "volume": 1.0, "is3D": False}]}
             entries.append((f"sounds/wubmas/{s['id']}/p{i:04d}.ogg", s["files"][i]))
+        for k, f in enumerate(s.get("files_blong") or []):
+            defs[ev_blong(s["id"], k)] = {"category": category, "sounds": [{"name": f"sounds/wubmas/{s['id']}/blong{k:04d}", "stream": True, "volume": 1.0, "is3D": False}]}
+            entries.append((f"sounds/wubmas/{s['id']}/blong{k:04d}.ogg", f))
     manifest = {"format_version": 2,
                 "header": {"name": title, "description": desc, "uuid": str(uuid.uuid5(uuid.NAMESPACE_DNS, key + ".header.wubcraft")), "version": [1, 0, version], "min_engine_version": [1, 20, 0]},
                 "modules": [{"type": "resources", "uuid": str(uuid.uuid5(uuid.NAMESPACE_DNS, key + ".resources.wubcraft")), "version": [1, 0, version], "description": "sounds"}]}
@@ -235,6 +281,29 @@ def bedrock_pack(path, sets, desc, category, version, key="wubmas-music", title=
             ("sounds/sound_definitions.json", (json.dumps({"format_version": "1.14.0", "sound_definitions": defs}, indent=1) + "\n").encode())]
     write_zip(path, head + entries)
     return defs
+
+
+BEDROCK_REMOTE_DIR = "WubmasMusic"
+LONG_PATH = 80      # Bedrock (some consoles) has trouble with a file path of this many characters or more; Geyser warns about it
+
+
+def bedrock_remote_zip(src, dst):
+    """The Bedrock pack again, for Geyser's `resource-pack-urls`: every file inside a folder (Geyser: a pack with its manifest.json at the root of the zip may not work from a web link, and the client then falls back to the server)."""
+    with zipfile.ZipFile(src) as z: entries = [(f"{BEDROCK_REMOTE_DIR}/{i.filename}", z.read(i.filename)) for i in z.infolist()]
+    write_zip(dst, entries)
+    return max(len(n) for n, _ in entries)
+
+
+def bedrock_remote_note(name, size, longest, pack_name):
+    lines = ["", "Bedrock pack from a web link (so the server does not send it to every phone and console):",
+             f"  {name} ({size / 1e6:.1f} MB) is the Bedrock pack again, for a link. Host it somewhere whose link ends in the file and answers with the type application/zip and the exact length",
+             "  (raw.githubusercontent.com answers text/plain, so it does not work; Geyser says so in the console when the link is wrong). Then, in plugins/Geyser-Spigot/config.yml, under advanced:",
+             "      resource-pack-urls:", f"        - \"https://.../{name}\"",
+             f"  and remove {pack_name} from plugins/Geyser-Spigot/packs (the same pack twice does not work). Restart: Geyser downloads the pack once at start-up, and the players get it from the link.",
+             "  config.yml has library.bedrock: false, so /wubmusic update does not copy a Bedrock pack into Geyser's packs folder either (that would be the same pack twice).",
+             f"  The longest path in the pack is {longest} characters ({LONG_PATH} or more would cause trouble on some consoles)." if longest < LONG_PATH else
+             f"  WARNING: the longest path in the pack is {longest} characters; {LONG_PATH} or more causes trouble on some Bedrock platforms. Use shorter set ids."]
+    return "\n".join(lines) + "\n"
 
 
 def yaml_str(s): return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
@@ -247,13 +316,17 @@ def set_key(text, key, value):
     return new
 
 
-def write_config(path, template, lineup, built, source, piece=15.0, overlap=0.3, pack_url="", pack_sha1="", layout="stereo"):
+def write_config(path, template, lineup, built, source, piece=15.0, overlap=0.3, pack_url="", pack_sha1="", layout="stereo", long_piece=0.0, bedrock_long_piece=0.0, bedrock_remote=False):
     text = template.read_text(encoding="utf-8")
     cut = re.search(r"^sets:\s*$", text, re.M)
     if not cut: raise ToolError("config-template.yml has no 'sets:' line")
     head = text[:cut.start()]
     head = set_key(head, "piece-seconds", f"{piece:g}"); head = set_key(head, "overlap-seconds", f"{overlap:g}"); head = set_key(head, "source", source)
-    head = set_key(head, "url", yaml_str(pack_url)); head = set_key(head, "sha1", yaml_str(pack_sha1)); head = set_key(head, "layout", layout)
+    head = set_key(head, "url", yaml_str(pack_url)); head = set_key(head, "sha1", yaml_str(pack_sha1)); head = set_key(head, "layout", layout); head = set_key(head, "long-piece-seconds", f"{long_piece:g}"); head = set_key(head, "bedrock-long-piece-seconds", f"{bedrock_long_piece:g}")
+    if bedrock_remote:      # the Bedrock pack comes from a web link: /wubmusic update must not also copy it into Geyser's packs folder (the same pack twice does not work)
+        head = set_key(head, "bedrock", "false")
+        head, n = re.subn(r"^(\s*bedrock:\s*false)[ ]*#.*$", r"\1                   # false: the Bedrock pack comes from a web link (Geyser's resource-pack-urls), so /wubmusic update must not copy one into Geyser's packs folder", head, count=1, flags=re.M)
+        if n != 1: raise ToolError("config-template.yml: the 'bedrock:' line has no comment to replace")
     lines = ["sets:"]
     for e in lineup:
         b = built.get(e["id"])
@@ -262,14 +335,16 @@ def write_config(path, template, lineup, built, source, piece=15.0, overlap=0.3,
     path.write_text(head + "\n".join(lines) + "\n", encoding="utf-8")
 
 
-def write_library(path, lineup, built, piece, overlap, pack_url, pack_sha1, bedrock_url="", bedrock_sha1="", bedrock_bytes=0, build=1, built_at=None, lights_url="", lights_sha1="", lights_bytes=0, layout="stereo"):
+def write_library(path, lineup, built, piece, overlap, pack_url, pack_sha1, bedrock_url="", bedrock_sha1="", bedrock_bytes=0, build=1, built_at=None, lights_url="", lights_sha1="", lights_bytes=0, layout="stereo", long_piece=0.0, bedrock_long_piece=0.0):
     """library.yml: everything /wubmusic update needs to switch the server to this build (the Java pack's address and SHA-1, the Bedrock pack, the sets with their lengths and start times)."""
     from datetime import datetime, timezone
     when = built_at or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     L = ["# Written by the Wubmas music builder. /wubmusic update on the server downloads this file and uses it instead of the sets and the resource-pack in config.yml.",
          "# Do not edit it: the next update replaces it. (Delete it and run /wubmusic reload to go back to config.yml.)",
-         f"build: {int(build)}", f"built: {yaml_str(when)}", f"piece-seconds: {piece:g}", f"overlap-seconds: {overlap:g}",
-         "resource-pack:", f"  url: {yaml_str(pack_url)}", f"  sha1: {yaml_str(pack_sha1)}", f"  layout: {layout}"]
+         f"build: {int(build)}", f"built: {yaml_str(when)}", f"piece-seconds: {piece:g}", f"overlap-seconds: {overlap:g}"]
+    if long_piece: L.append(f"long-piece-seconds: {long_piece:g}")
+    if bedrock_long_piece: L.append(f"bedrock-long-piece-seconds: {bedrock_long_piece:g}")
+    L += ["resource-pack:", f"  url: {yaml_str(pack_url)}", f"  sha1: {yaml_str(pack_sha1)}", f"  layout: {layout}"]
     if bedrock_url:
         L += ["bedrock-pack:", f"  url: {yaml_str(bedrock_url)}", f"  sha1: {yaml_str(bedrock_sha1)}", f"  bytes: {int(bedrock_bytes)}"]
     if lights_url:
@@ -348,7 +423,7 @@ def test_set_for(p, taken):
     return {"id": sid, "name": f"Test: {pretty}" if pretty else f"Test: {sid}", "start": TEST_START, "test": True}
 
 
-def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, normalize=True, lineup_file=None, source="record", cap_mb=250, tail_min=2.0, end_fade=1.0, extra_lineup=None, quiet=False, demo=False, pack_url="", bedrock_url="", version=None, strict_ids=False, short_min=10.0, stage_dir=None, lights=False, lights_url="", java_layout="split"):
+def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, normalize=True, lineup_file=None, source="record", cap_mb=250, tail_min=2.0, end_fade=1.0, extra_lineup=None, quiet=False, demo=False, pack_url="", bedrock_url="", version=None, strict_ids=False, short_min=10.0, stage_dir=None, lights=False, lights_url="", java_layout="stereo", long_piece=0.0, catchup_kbps=None, bass_hz=BASS_HZ, bedrock_long_piece=0.0, bedrock_catchup_kbps=None, bedrock_kbps=None, bedrock_remote=False):
     sets_dir = Path(sets_dir); out = Path(out)
     if java_layout not in LAYOUTS: raise ToolError(f"the Java layout is split or stereo (got {java_layout!r})")
     if pack_url and not re.fullmatch(r"https?://[\x21-\x7e]{3,2000}", pack_url): raise ToolError(f"--pack-url must be a web address that starts with https:// and has no spaces or accents (got {pack_url!r}).")
@@ -361,6 +436,24 @@ def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, 
     if not sets_dir.is_dir(): raise ToolError(f"{sets_dir} is not a folder. Put the DJ set files in a folder and give its name.")
     if abs(piece * 20 - round(piece * 20)) > 1e-9 or abs(overlap * 20 - round(overlap * 20)) > 1e-9 or not (2 <= piece <= 120) or not (0 <= overlap < piece / 2):
         raise ToolError("--piece and --overlap must be multiples of 0.05 seconds (whole server ticks), piece 2 to 120, overlap under half a piece")
+    if bass_hz and not (40 <= bass_hz <= 1000): raise ToolError(f"--bass-hz must be between 40 and 1000 (got {bass_hz:g}), or 0 to crossfade everything.")
+    ratio = 0
+    if long_piece:
+        ratio = round(long_piece / piece)
+        if not (long_piece >= 2 * piece and long_piece <= 120) or ratio < 2 or abs(ratio * piece - long_piece) > 1e-6:
+            raise ToolError(f"--long-piece must be a whole number of pieces (--piece is {piece:g} s), at least two and at most 120 s long (got {long_piece:g}), or 0 for no long pieces.")
+        if java_layout != "stereo": raise ToolError("--long-piece needs the stereo Java layout (the split layout is made of two mono sounds per piece and has no long pieces).")
+    bratio = 0
+    if bedrock_long_piece:
+        bratio = round(bedrock_long_piece / piece)
+        if not (bedrock_long_piece >= 2 * piece and bedrock_long_piece <= 120) or bratio < 2 or abs(bratio * piece - bedrock_long_piece) > 1e-6:
+            raise ToolError(f"--bedrock-long-piece must be a whole number of pieces (--piece is {piece:g} s), at least two and at most 120 s long (got {bedrock_long_piece:g}), or 0 for no long pieces for Bedrock.")
+    ckbps = int(catchup_kbps) if catchup_kbps else max(48, kbps // 2)
+    if not (48 <= ckbps <= 320): raise ToolError("--catchup-kbps must be between 48 and 320 (Ogg Vorbis cannot go lower)")
+    bkbps = int(bedrock_kbps) if bedrock_kbps else kbps
+    if not (48 <= bkbps <= 320): raise ToolError("--bedrock-kbps must be between 48 and 320 (Ogg Vorbis cannot go lower)")
+    bckbps = int(bedrock_catchup_kbps) if bedrock_catchup_kbps else min(ckbps, bkbps)
+    if not (48 <= bckbps <= 320): raise ToolError("--bedrock-catchup-kbps must be between 48 and 320 (Ogg Vorbis cannot go lower)")
     if source not in ("record", "music"): raise ToolError("--source must be record or music")
     if not (48 <= kbps <= 320): raise ToolError("--kbps must be between 48 and 320 (Ogg Vorbis cannot go lower)")
     lineup = json.loads(Path(lineup_file or HERE / "lineup.json").read_text(encoding="utf-8")) + list(extra_lineup or [])
@@ -392,9 +485,29 @@ def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, 
             if dur < 2.0: raise ToolError(f"{src.name} is only {dur:.1f} seconds long.")
             count, seconds = plan(dur, piece, tail_min)
             if not quiet: say(f"[{sid}] {dur / 60:.1f} min, cutting into {count} pieces of {piece:g} s and encoding at {kbps} kbps ...")
-            files_ = encode_pieces(wav, work / "ogg", sid, piece, overlap / 2, count, kbps, end_fade)
+            cache = {}
+            def shorts(kb):
+                if ("s", kb) not in cache: cache[("s", kb)] = encode_pieces(wav, work / f"ogg_{kb}", sid, piece, overlap / 2, count, kb, end_fade, bass_hz=bass_hz)
+                return cache[("s", kb)]
+            def longs(length, kb):
+                if ("l", length, kb) not in cache:
+                    cache[("l", length, kb)] = encode_pieces(wav, work / f"ogg_long_{length:g}_{kb}", sid, length, overlap / 2, long_count(count, round(length / piece)), kb, end_fade, prefix="long", end_s=count * piece + overlap / 2, bass_hz=bass_hz)
+                return cache[("l", length, kb)]
+            # the short pieces: Bedrock's (files_) at --kbps, or at the lower catch-up bitrate when Bedrock has long pieces (only players who join in the middle hear them); Java's (files_java) likewise
+            files_ = shorts(bckbps if bratio else bkbps)
             size = sum(f.stat().st_size for f in files_)
-            files_l = files_r = None
+            files_l = files_r = files_long = files_java = files_blong = None
+            lsize = jsize = blsize = 0
+            if ratio:
+                if not quiet: say(f"[{sid}] and {long_count(count, ratio)} long pieces of {long_piece:g} s ({kbps} kbps), and the short pieces for Java at {ckbps} kbps (only heard for a moment by players who join in the middle) ...")
+                files_long = longs(long_piece, kbps)
+                lsize = sum(f.stat().st_size for f in files_long)
+            files_java = shorts(ckbps if ratio else kbps)
+            jsize = sum(f.stat().st_size for f in files_java)
+            if bratio:
+                if not quiet: say(f"[{sid}] and {long_count(count, bratio)} long pieces of {bedrock_long_piece:g} s for Bedrock ({bkbps} kbps), and the short pieces for Bedrock at {bckbps} kbps ...")
+                files_blong = longs(bedrock_long_piece, bkbps)
+                blsize = sum(f.stat().st_size for f in files_blong)
             if java_layout == "split":
                 if not quiet: say(f"[{sid}] and the left and the right channel apart for Java ({mono_kbps(kbps)} kbps each) ...")
                 files_l = encode_pieces(wav, work / "ogg", sid, piece, overlap / 2, count, mono_kbps(kbps), end_fade, "l")
@@ -404,7 +517,7 @@ def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, 
                 res, lw = analyse_lights(lm, wav, sid, seconds)
                 light_warnings += lw
                 if res is not None: light_sets[sid] = res
-            built[sid] = {"id": sid, "name": e["name"], "pieces": count, "seconds": seconds, "files": files_, "files_l": files_l, "files_r": files_r, "size": size, "duration": dur, "stats": st, "source": src.name, "start": e["start"]}
+            built[sid] = {"id": sid, "name": e["name"], "pieces": count, "seconds": seconds, "files": files_, "files_l": files_l, "files_r": files_r, "files_long": files_long, "files_java": files_java, "files_blong": files_blong, "long_size": lsize, "blong_size": blsize, "java_short_size": jsize, "size": size, "duration": dur, "stats": st, "source": src.name, "start": e["start"]}
             os.remove(wav)
         sets = [built[e["id"]] for e in lineup if e["id"] in built]
         vf = out / ".pack-version"
@@ -417,6 +530,10 @@ def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, 
         sounds = java_pack(jp, sets, desc, stage, java_layout)
         defs = bedrock_pack(bp, sets, desc, source, version, "wubmas-music-demo" if demo else "wubmas-music", "Wubmas Music (demo)" if demo else "Wubmas Music")
         vf.write_text(json.dumps({"n": version}))
+        brz = None
+        for old in out.glob("WubmasMusic-bedrock-v*.zip"): old.unlink()      # (never leave the link pack of an earlier build next to this build's)
+        if bedrock_remote:
+            brz = out / f"WubmasMusic-bedrock-v{version}.zip"; brz_longest = bedrock_remote_zip(bp, brz)
         jsha = sha1(jp)
         lf = out / "lights.txt"
         if lf.exists(): lf.unlink()                       # (never leave the map of an earlier build next to this build's music)
@@ -427,13 +544,15 @@ def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, 
             if lights_url and not light_sets: light_warnings.append("--lights-url was given but there is no light map, so library.yml has no lights entry.")
             light_info = {"sets": light_sets, "file": lf if light_sets else None, "url": lights_url if light_sets else "", "warnings": light_warnings}
         elif lights: light_info = {"sets": {}, "file": None, "url": "", "warnings": light_warnings}
-        write_config(out / "config.yml", HERE / "config-template.yml", lineup, built, source, piece, overlap, pack_url, jsha, java_layout)
+        write_config(out / "config.yml", HERE / "config-template.yml", lineup, built, source, piece, overlap, pack_url, jsha, java_layout, long_piece if ratio else 0.0, bedrock_long_piece if bratio else 0.0, bedrock_remote=bedrock_remote)
         lurl = lights_url if light_sets else ""
         if pack_url: write_library(out / "library.yml", lineup, built, piece, overlap, pack_url, jsha, bedrock_url, sha1(bp) if bedrock_url else "", bp.stat().st_size if bedrock_url else 0, version,
-                                   lights_url=lurl, lights_sha1=sha1(lf) if lurl else "", lights_bytes=lf.stat().st_size if lurl else 0, layout=java_layout)
-        write_report(out / "REPORT.txt", sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs if normalize else None, lineup, pack_url, file_notes, file_warnings, 0 if demo else short_min, len(stage), light_info, java_layout)
-        write_server_files(out, bp, lf if light_sets else None)
-        return {"sets": sets, "java": jp, "bedrock": bp, "events": len(sounds), "layout": java_layout, "version": version, "java_mb": jp.stat().st_size / 1e6, "bedrock_mb": bp.stat().st_size / 1e6, "lineup": lineup, "lights": lf if light_sets else None, "light_sets": sorted(light_sets)}
+                                   lights_url=lurl, lights_sha1=sha1(lf) if lurl else "", lights_bytes=lf.stat().st_size if lurl else 0, layout=java_layout, long_piece=long_piece if ratio else 0.0, bedrock_long_piece=bedrock_long_piece if bratio else 0.0)
+        write_report(out / "REPORT.txt", sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs if normalize else None, lineup, pack_url, file_notes, file_warnings, 0 if demo else short_min, len(stage), light_info, java_layout, long_piece if ratio else 0.0, ckbps if ratio else None, bass_hz if (java_layout != "split" and overlap > 0) else 0, bedrock_long_piece if bratio else 0.0, bckbps if bratio else None, bkbps, bedrock_remote=brz is not None)
+        if brz is not None:
+            with open(out / "REPORT.txt", "a", encoding="utf-8") as rf: rf.write(bedrock_remote_note(brz.name, brz.stat().st_size, brz_longest, "WubmasMusic.mcpack"))
+        write_server_files(out, None if brz is not None else bp, lf if light_sets else None)
+        return {"sets": sets, "java": jp, "bedrock": bp, "bedrock_remote": brz, "events": len(sounds), "layout": java_layout, "long_piece": long_piece if ratio else 0.0, "bedrock_long_piece": bedrock_long_piece if bratio else 0.0, "catchup_kbps": ckbps if ratio else None, "bedrock_catchup_kbps": bckbps if bratio else None, "bedrock_kbps": bkbps, "version": version, "java_mb": jp.stat().st_size / 1e6, "bedrock_mb": bp.stat().st_size / 1e6, "lineup": lineup, "lights": lf if light_sets else None, "light_sets": sorted(light_sets)}
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
@@ -443,9 +562,10 @@ def write_server_files(out, bedrock_pack_path, lights_path=None):
     srv = out / "server-files"
     if srv.exists(): shutil.rmtree(srv)
     cfg_dir = srv / "plugins" / "WubmasMusic"; packs_dir = srv / "plugins" / "Geyser-Spigot" / "packs"
-    cfg_dir.mkdir(parents=True); packs_dir.mkdir(parents=True)
+    cfg_dir.mkdir(parents=True)
     shutil.copyfile(out / "config.yml", cfg_dir / "config.yml")
-    shutil.copyfile(bedrock_pack_path, packs_dir / "WubmasMusic.mcpack")
+    if bedrock_pack_path is not None:       # (None: the Bedrock pack comes from a web link; the same pack in Geyser's packs folder as well would be a second copy of it)
+        packs_dir.mkdir(parents=True); shutil.copyfile(bedrock_pack_path, packs_dir / "WubmasMusic.mcpack")
     if lights_path: shutil.copyfile(lights_path, cfg_dir / "lights.txt")
     return srv
 
@@ -458,7 +578,7 @@ def parse_start(t):
     return None
 
 
-def write_report(path, sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs, lineup=(), pack_url="", file_notes=(), file_warnings=(), short_min=10.0, stage_count=None, lights=None, layout="stereo"):
+def write_report(path, sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs, lineup=(), pack_url="", file_notes=(), file_warnings=(), short_min=10.0, stage_count=None, lights=None, layout="stereo", long_piece=0.0, catchup_kbps=None, bass_hz=0, bedrock_long_piece=0.0, bedrock_catchup_kbps=None, bedrock_kbps=None, bedrock_remote=False):
     wid = max([16] + [len(s["id"]) + 2 for s in sets] + [len(n[0]) + 2 for n in file_notes])
     L = [f"WUBMAS MUSIC - build {version}", "", f"{'set':<{wid}}{'file':<24}{'length':>8}{'pieces':>8}{'size':>9}   loudness (before -> after)"]
     warnings = list(file_warnings)
@@ -494,6 +614,16 @@ def write_report(path, sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs
               "              (Bedrock players get the stereo pieces, and the fade in steps). Needs WubmasMusic 1.7.0 or newer and a stage point: /wubmusic stage set, standing at the middle of the stage and facing the dance floor."]
     else:
         L += ["Java layout:  stereo - one stereo sound per piece: the same volume everywhere for Java players (a stereo sound is not faded by the game)"]
+    if long_piece:
+        ls = sum(s.get("long_size", 0) for s in sets) / 1e6; js = sum(s.get("java_short_size", 0) for s in sets) / 1e6
+        L += [f"Long pieces:  {long_piece:g} s ({round(long_piece / piece)} short pieces each). Java players who are in step get one long piece ({ls:.1f} MB at {kbps} kbps) for every {round(long_piece / piece)} short ones, so the tiny random timing error of a start comes {round(long_piece / piece)} times less often.",
+              f"              Players who join in the middle (and every Bedrock player{", unless Bedrock has long pieces too" if bedrock_long_piece else ""}) get the short pieces of {piece:g} s, so nobody is more than {piece:g} s behind; for Java they are in the pack at {catchup_kbps} kbps ({js:.1f} MB).",
+              "              Needs WubmasMusic 1.10.0 or newer (long-piece-seconds in config.yml / library.yml; both files have it already)."]
+    if bedrock_long_piece:
+        bls = sum(s.get("blong_size", 0) for s in sets) / 1e6; bs = sum(s.get("size", 0) for s in sets) / 1e6
+        L += [f"Bedrock long pieces: {bedrock_long_piece:g} s ({round(bedrock_long_piece / piece)} short pieces each, {bls:.1f} MB at {bedrock_kbps or kbps} kbps in the Bedrock pack). Bedrock players who are in step get one for every {round(bedrock_long_piece / piece)} short ones; the short pieces for Bedrock are in the pack at {bedrock_catchup_kbps} kbps ({bs:.1f} MB).",
+              "              A Bedrock sound is flat, so its volume (the fade with the distance from the stage) is set when a piece starts: with long pieces it changes only every long piece.",
+              "              Needs WubmasMusic 1.11.0 or newer (bedrock-long-piece-seconds in config.yml / library.yml; both files have it already)."]
     if stage_count is not None:
         L += [f"Stage models: {stage_count} files (CDJs, mixer) are in the Java pack" if stage_count else "Stage models: none"]
         if not stage_count: warnings.append("The Java pack has no stage models (the stage_assets folder next to the tool is missing or empty), so the CDJs and the mixer show the pink-and-black missing texture in game.")
@@ -513,8 +643,10 @@ def write_report(path, sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs
     L += ["", "Warnings:"] + (["  " + w for w in warnings] if warnings else ["  none"])
     L += ["", "Put these on the server:",
           "  1. Drag the folder 'server-files/plugins' (it is next to this report) onto the server's main folder and choose merge / replace.",
-          "     It holds config.yml and the Bedrock pack already in the right folders (plugins/WubmasMusic/ and plugins/Geyser-Spigot/packs/) with the right names,",
-          "     and it replaces the old Bedrock pack, so there is nothing to rename or delete. Then restart the server.",
+          *(["     It holds config.yml (and lights.txt) already in the right folder (plugins/WubmasMusic/) with the right names. It has no Bedrock pack: the Bedrock pack comes from a web link (see the end of this report).",
+             "     If an earlier build's WubmasMusic.mcpack is in plugins/Geyser-Spigot/packs on the server, delete it. Then restart the server."] if bedrock_remote else
+            ["     It holds config.yml and the Bedrock pack already in the right folders (plugins/WubmasMusic/ and plugins/Geyser-Spigot/packs/) with the right names,",
+             "     and it replaces the old Bedrock pack, so there is nothing to rename or delete. Then restart the server."]),
           "  2. WubmasMusic-java.zip -> upload it where a direct download link works (a new GitHub release; use a file name you have not used before, or players keep their cached old pack).",
           f"     The pack's SHA-1 is {sha1(jp)} and config.yml already has it.",
           (f"     config.yml also has the link {pack_url}, so the file has to be at exactly that address." if pack_url
@@ -524,7 +656,7 @@ def write_report(path, sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs
           *( ["  3. lights.txt -> upload it where a direct download link works, at exactly " + lights["url"] + " (the same website as library.yml; /wubmusic update downloads it and checks it against the SHA-1 in library.yml).",
               "     It is also in server-files/plugins/WubmasMusic/, so step 1 already puts this build's light map on the server."] if lights and lights["file"] and lights["url"] else
              ["  3. lights.txt is in server-files/plugins/WubmasMusic/, so step 1 puts it on the server. (Build with --lights-url so that /wubmusic update brings the light map too.)"] if lights and lights["file"] else []),
-          "", f"Timing: pieces of {piece:g} s with {overlap:g} s overlap. config.yml must have the same piece-seconds and overlap-seconds (it does unless you changed them)."]
+          "", f"Timing: pieces of {piece:g} s with {overlap:g} s overlap" + (f", long pieces of {long_piece:g} s" if long_piece else "") + ". config.yml must have the same piece-seconds, overlap-seconds" + (" and long-piece-seconds" if long_piece else "") + " (it does unless you changed them)." + (f" The joins switch the sound below {bass_hz:g} Hz instead of crossfading it, to keep the dips short (nothing to set for that)." if bass_hz else "")]
     path.write_text("\n".join(L) + "\n", encoding="utf-8")
 
 
@@ -590,10 +722,19 @@ def main(argv=None):
     ap.add_argument("--strict-ids", action="store_true", help="stop with an error when a file is not one of the DJs in lineup.json (instead of making it a test set that never starts by itself)")
     ap.add_argument("--lights-url", default="", help="the web address the light map (lights.txt) will be uploaded to, on the same website as the packs (library.yml gets it with the SHA-1; /wubmusic update downloads it)")
     ap.add_argument("--no-lights", action="store_true", help="do not find the beats for the stage lights (saves a few seconds per set; there is no light map then)")
-    ap.add_argument("--java-stereo", action="store_true", help="make the Java pack with one stereo sound per piece (the old layout: the same volume everywhere). The default is the split layout, with the left and the right channel apart, which the plugin (1.7.0 or newer) plays from two speakers at the stage so the music fades with the distance and stays in stereo")
+    ap.add_argument("--long-piece", type=float, default=0.0, help="also cut the Java pack into long pieces of this many seconds (a whole number of --piece, for example --piece 6 --long-piece 30): players who are in step get a long piece for every few short ones, so the tiny timing error of a start (a dip, a skipped moment) comes that many times less often, while players who join in the middle get the short pieces and are never more than one short piece behind. 0 = no long pieces (default). Needs WubmasMusic 1.10.0")
+    ap.add_argument("--bedrock-long-piece", type=float, default=0.0, help="also cut the Bedrock pack into long pieces of this many seconds (a whole number of --piece; it may be shorter than --long-piece because phones and consoles are not as strong): Bedrock players who are in step get a long piece for every few short ones, so they have joins that many times less often, while Bedrock players who join in the middle get the short pieces. 0 = none (default). Needs WubmasMusic 1.11.0")
+    ap.add_argument("--bedrock-kbps", type=int, default=None, help="the bitrate of the Bedrock pack (default: the same as --kbps). Phones download the whole pack when they join: a lower bitrate makes it smaller, and every Bedrock sound is played flat (no stage distance in the sound itself), so phone speakers and earbuds lose little. 48 is the lowest Ogg Vorbis can do in stereo")
+    ap.add_argument("--bedrock-remote", action="store_true", help="also write the Bedrock pack as WubmasMusic-bedrock-vN.zip for a web link (Geyser's resource-pack-urls in its config.yml): the phones and consoles then download it from that link and not from the server, which matters for a big crowd. The link must answer with the type application/zip and the exact length")
+    ap.add_argument("--bedrock-catchup-kbps", type=int, default=None, help="the bitrate of the short pieces in the Bedrock pack when it has long pieces (default: the same as --catchup-kbps, or --bedrock-kbps if that is lower)")
+    ap.add_argument("--catchup-kbps", type=int, default=None, help="the bitrate of the short pieces in the Java pack when there are long pieces (only players who join in the middle hear them, for a moment; default: half of --kbps, at least 48). The Bedrock pack has its own bitrate: --bedrock-kbps (default --kbps)")
+    ap.add_argument("--bass-hz", type=float, default=BASS_HZ, help=f"where two pieces meet, the sound below this pitch is switched from one piece to the next in a few milliseconds and only the sound above it is crossfaded (default {BASS_HZ:g}). The game starts every piece a few milliseconds off, and two crossfaded copies of the bass then cancel for a moment (the 'dip'); a switch makes that rarer and shorter. 0 = crossfade everything, as before. Does not change anything in config.yml")
+    ap.add_argument("--java-split", action="store_true", help="make the Java pack with the left and the right channel apart (two mono sounds per piece), which the plugin plays from two speakers at the stage so the music fades with the distance. The default is one stereo sound per piece: the split layout can cancel the bass for a moment when the two sounds start a few milliseconds apart, so it is not used for the show. No long pieces with it")
+    ap.add_argument("--java-stereo", action="store_true", help="the same as the default (one stereo sound per piece); kept so that older commands still work")
     ap.add_argument("--demo", action="store_true", help="build a 2 minute made-up sound check set instead of reading a folder (needs numpy)")
     a = ap.parse_args(argv)
     try:
+        if a.java_split and a.java_stereo: ap.error("--java-split and --java-stereo do not go together")
         ffmpeg_path()
         tmp = None
         if a.demo:
@@ -602,7 +743,7 @@ def main(argv=None):
             tmp = tempfile.mkdtemp(prefix="wubmas_demo_"); make_demo(tmp); a.sets = tmp
         if not a.sets: ap.error("give the folder with the set files (or --demo)")
         r = build(a.sets, a.out, kbps=a.kbps, piece=a.piece, overlap=a.overlap, lufs=a.lufs, normalize=not a.no_normalize, lineup_file=a.lineup, source=a.source, cap_mb=a.cap_mb,
-                  extra_lineup=[{"id": "soundcheck", "name": "Sound check", "start": "2026-01-01 12:00"}] if a.demo else None, demo=a.demo, pack_url=a.pack_url.strip(), bedrock_url=a.bedrock_url.strip(), version=a.version, strict_ids=a.strict_ids, short_min=a.short_minutes, stage_dir=a.stage_assets, lights=not a.no_lights, lights_url=a.lights_url.strip(), java_layout="stereo" if a.java_stereo else "split")
+                  extra_lineup=[{"id": "soundcheck", "name": "Sound check", "start": "2026-01-01 12:00"}] if a.demo else None, demo=a.demo, pack_url=a.pack_url.strip(), bedrock_url=a.bedrock_url.strip(), version=a.version, strict_ids=a.strict_ids, short_min=a.short_minutes, stage_dir=a.stage_assets, lights=not a.no_lights, lights_url=a.lights_url.strip(), java_layout="split" if a.java_split else "stereo", long_piece=a.long_piece, catchup_kbps=a.catchup_kbps, bass_hz=a.bass_hz, bedrock_long_piece=a.bedrock_long_piece, bedrock_catchup_kbps=a.bedrock_catchup_kbps, bedrock_kbps=a.bedrock_kbps, bedrock_remote=a.bedrock_remote)
         if tmp: shutil.rmtree(tmp, ignore_errors=True)
     except ToolError as e:
         print("\nERROR: " + str(e), file=sys.stderr); return 1
