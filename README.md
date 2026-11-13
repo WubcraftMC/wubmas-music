@@ -24,11 +24,11 @@ GitHub's website only takes files up to 25 MB when you drop them into the reposi
 2. Release title: **Wubmas music files** (exactly like that; the builder looks for this name). For the tag, type any name, for example `dj-files`. It does not matter, because this release is never published.
 3. Drag the music files into the box that says to attach binaries. **Any file name works, you never have to rename anything.** The builder looks at each name:
    - A name that is, starts with or ends with a DJ's name is that DJ's set, and it plays at that DJ's time. `DxBuddha.mp3`, `Yung Siete.wav`, `gnarlie final mix v2.mp3` and `Wubmas set - INFRNO.flac` all work (capitals, spaces and dashes do not matter). A song that only has the name in the middle, like `Artist - Song (INFRNO Remix).wav`, is not the DJ's set. The names it knows are in `lineup.json` (DxBuddha, Yung Siete, Gnarlie, FRGMNTD, Voydoom B2B Moros, INFRNO, James V).
-   - Any other file is a **test set**: any song, any name. It is in the lineup as "Test: <file name>" and it **never starts by itself**, so it can never play at the wrong moment. You start it by hand on the server with `/wubmusic start <id> 0` (press Tab after `start` to see the ids; the id is the file name in small letters with `_`, so `Jingle Bells.mp3` is `jingle_bells`) and stop it with `/wubmusic stop`. (Starting a test set stops whatever else is playing, so do not do it while a DJ is on.)
+   - Any other file is a **test set**: any song, any name. Selected songs appear in the lineup as "Test: <file name>" and **never start by themselves**, so they can never play at the wrong moment. You start one by hand with `/wubmusic start <id> 0` (press Tab after `start` to see the included ids) and stop it with `/wubmusic stop`. The small default playlist includes six full test songs; other source songs stay saved in the draft for later selection. (Starting a test set stops whatever else is playing, so do not do it while a DJ is on.)
 
    mp3, wav, flac, ogg and m4a all work. Wait until every file's bar is full.
 
-   Everything in the draft ends up in the packs that every player downloads, so do not put a whole library in. **A build takes up to 100 files and 8 GB**, and it stops in seconds with a message when there are more. About 40 songs is plenty for testing (a 5 minute song adds about 2.5 MB at quality 64, and the game does not accept a pack over 250 MB).
+   Every player downloads the audio included in the chosen pack. The builder keeps the current sound quality, catch-up pieces and long playback pieces, and reduces the download by selecting fewer test songs. All original sources stay in the draft. **A build still downloads up to 100 source files and 8 GB**, including unselected sources, so that download limit still applies. Only selected test songs and matched DJ sets are encoded and packaged.
 4. Click **Save draft**. Not "Publish release": that would make the files public.
 
 To swap a file later, open the draft (Releases, the one marked Draft, Edit), click the cross next to the old file, drag the new one in, and Save draft again. You can add files one at a time; a DJ who has no file yet stays in the lineup and the server tells you that set has no audio.
@@ -36,6 +36,18 @@ To swap a file later, open the draft (Releases, the one marked Draft, Edit), cli
 If a DJ's file has a different name than the one in `lineup.json` (a misspelling, a nickname), it becomes a test set and the DJ has no music. The build report tells you in its Warnings, and shows a "Which file is which" list, so read it once before the festival. It also warns when a DJ's file is shorter than 10 minutes, because that is probably a song and not a set. Fix it by renaming the file in the draft, or by changing the name in `lineup.json`.
 
 ## Building
+
+### Small test playlist or all songs
+
+The workflow's **Test song selection** defaults to **Sample playlist**, which reads the six ids in `test-playlist.json`. All matched scheduled DJ sets are included regardless of this test-song selection. The music quality, 2-second catch-up, 120-second Java playback and 30-second Bedrock playback settings stay the same.
+
+To rotate the test songs, edit `test-playlist.json` using the ids listed in the build report. Committing that file starts a new small build automatically. The report lists both included and excluded test songs. Ids remain stable when changing selections, and a missing or mistyped selected id fails the build before encoding rather than quietly producing an incomplete playlist. Use an empty list for no extra test songs when there are DJ sets to package.
+
+To test the complete library, manually run **Build Wubmas music**, choose **All songs**, and keep the other settings unchanged. This includes every full test song and makes the download larger for everyone. It is a whole-pack choice, not a separate private pack for staff. To return to the smaller pack, run the workflow with **Sample playlist** again. No original songs need to be deleted.
+
+Only songs included in the current pack can be played on the server. After a successful build, `/wubmusic update` switches to that selection; restart Geyser/the server as directed for a changed Bedrock pack. The **lights-only** workflow reuses whichever audio selection is already published; changing the song selection requires the normal music workflow.
+
+For command-line use, `--test-playlist test-playlist.json` selects a playlist and `--all-test-tracks` includes all test songs. The CLI defaults to the repository playlist; `--demo` remains an independent sound check. The Python `build()` API keeps its previous all-tracks behavior unless a `test_playlist` file is supplied.
 
 Actions tab, **Build Wubmas music** on the left, **Run workflow** on the right, and press the green button. The form is already filled in with what the test packs used, so normally you change nothing: 64 kbps quality (about 100 MB for seven half-hour sets; 96 sounds a little better and makes a bigger download for every player), 2 second pieces, Java long pieces of 120 seconds, Bedrock long pieces of 30 seconds and a 48 kbps Bedrock pack. What these do is explained under "On the server" below.
 
@@ -69,6 +81,7 @@ Edit `lineup.json` here on GitHub (the pencil icon), then Commit changes. That s
 | path | what it is |
 |---|---|
 | `lineup.json` | the sets: id, name and start time |
+| `test-playlist.json` | the full test songs included in the small default pack; edit to rotate songs |
 | `.github/workflows/build-music.yml` | the build, run by the button |
 | `scripts/` | download the sets, publish the release |
 | `tool/` | cuts the sets into pieces and makes the Java and Bedrock packs |

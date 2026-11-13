@@ -423,7 +423,24 @@ def test_set_for(p, taken):
     return {"id": sid, "name": f"Test: {pretty}" if pretty else f"Test: {sid}", "start": TEST_START, "test": True}
 
 
-def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, normalize=True, lineup_file=None, source="record", cap_mb=250, tail_min=2.0, end_fade=1.0, extra_lineup=None, quiet=False, demo=False, pack_url="", bedrock_url="", version=None, strict_ids=False, short_min=10.0, stage_dir=None, lights=False, lights_url="", java_layout="stereo", long_piece=0.0, catchup_kbps=None, bass_hz=BASS_HZ, bedrock_long_piece=0.0, bedrock_catchup_kbps=None, bedrock_kbps=None, bedrock_remote=False):
+def select_test_tracks(lineup, playlist_file):
+    """Filter only test sets, after every source has its stable id. Never filter DJ slots."""
+    if playlist_file is None: return list(lineup), []
+    try: payload = json.loads(Path(playlist_file).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e: raise ToolError(f"Cannot read test playlist {playlist_file}: {e}. Restore test-playlist.json or choose All songs.")
+    selected = payload.get("test_set_ids") if isinstance(payload, dict) else None
+    if not isinstance(selected, list) or any(not isinstance(sid, str) or not re.fullmatch(r"[a-z0-9_]{1,40}", sid) for sid in selected):
+        raise ToolError("The test playlist must be an object with test_set_ids: a list of test ids from the build report.")
+    if len(selected) != len(set(selected)): raise ToolError("The test playlist contains duplicate ids.")
+    tests = {e["id"] for e in lineup if e.get("test")}
+    missing = [sid for sid in selected if sid not in tests]
+    if missing: raise ToolError("These playlist ids are not available test songs: " + ", ".join(missing) + ". Check the source names or edit test-playlist.json. Scheduled DJ sets are always included separately.")
+    wanted = set(selected)
+    excluded = [e for e in lineup if e.get("test") and e["id"] not in wanted]
+    return [e for e in lineup if not e.get("test") or e["id"] in wanted], excluded
+
+
+def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, normalize=True, lineup_file=None, source="record", cap_mb=250, tail_min=2.0, end_fade=1.0, extra_lineup=None, quiet=False, demo=False, pack_url="", bedrock_url="", version=None, strict_ids=False, short_min=10.0, stage_dir=None, lights=False, lights_url="", java_layout="stereo", long_piece=0.0, catchup_kbps=None, bass_hz=BASS_HZ, bedrock_long_piece=0.0, bedrock_catchup_kbps=None, bedrock_kbps=None, bedrock_remote=False, test_playlist=None):
     sets_dir = Path(sets_dir); out = Path(out)
     if java_layout not in LAYOUTS: raise ToolError(f"the Java layout is split or stereo (got {java_layout!r})")
     if pack_url and not re.fullmatch(r"https?://[\x21-\x7e]{3,2000}", pack_url): raise ToolError(f"--pack-url must be a web address that starts with https:// and has no spaces or accents (got {pack_url!r}).")
@@ -465,7 +482,14 @@ def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, 
     taken = {e["id"] for e in lineup}
     for p in tests:
         e = test_set_for(p, taken); taken.add(e["id"]); lineup.append(e); ids[e["id"]] = p
-        if not quiet: say(f"Note: {p.name} is not a DJ's set, so it is the test set '{e['id']}'. It never starts by itself: /wubmusic start {e['id']} 0")
+    lineup, excluded_tests = select_test_tracks(lineup, test_playlist)
+    if not any(e["id"] in ids for e in lineup): raise ToolError("No audio is selected. Add a test song to test-playlist.json, add a DJ set, or choose All songs.")
+    test_count = sum(bool(e.get("test")) for e in lineup)
+    selection_note = f"Test playlist: {test_count} of {len(tests)} full test songs included. Scheduled DJ sets are always included; source files are unchanged."
+    if not quiet:
+        say(selection_note)
+        for e in lineup:
+            if e.get("test"): say(f"Test: {e['id']} — {ids[e['id']].name} (/wubmusic start {e['id']} 0)")
     file_notes = [(e["id"], e["name"], ids[e["id"]].name if e["id"] in ids else None, assigned[e["id"]][1] if e["id"] in assigned else ("test set" if e.get("test") else None)) for e in lineup]
     out.mkdir(parents=True, exist_ok=True)
     lm = load_lightmap() if lights else None
@@ -561,6 +585,11 @@ def build(sets_dir, out, kbps=96, piece=15.0, overlap=0.3, lufs=-14.0, tp=-2.0, 
         if pack_url: write_library(out / "library.yml", lineup, built, piece, overlap, pack_url, jsha, bedrock_url, sha1(bp) if bedrock_url else "", bp.stat().st_size if bedrock_url else 0, version,
                                    lights_url=lurl, lights_sha1=sha1(lf) if lurl else "", lights_bytes=lf.stat().st_size if lurl else 0, layout=java_layout, long_piece=long_piece if ratio else 0.0, bedrock_long_piece=bedrock_long_piece if bratio else 0.0)
         write_report(out / "REPORT.txt", sets, jp, bp, kbps, cap_mb, version, piece, overlap, lufs if normalize else None, lineup, pack_url, file_notes, file_warnings, 0 if demo else short_min, len(stage), light_info, java_layout, long_piece if ratio else 0.0, ckbps if ratio else None, bass_hz if (java_layout != "split" and overlap > 0) else 0, bedrock_long_piece if bratio else 0.0, bckbps if bratio else None, bkbps, bedrock_remote=brz is not None)
+        with (out / "REPORT.txt").open("a", encoding="utf-8") as report_file:
+            report_file.write("\n" + selection_note + "\n")
+            if excluded_tests:
+                report_file.write("Saved test songs excluded from this pack (edit test-playlist.json to rotate them, or choose All songs):\n")
+                for e in excluded_tests: report_file.write(f"  {e['id']}: {ids[e['id']].name}\n")
         if brz is not None:
             with open(out / "REPORT.txt", "a", encoding="utf-8") as rf: rf.write(bedrock_remote_note(brz.name, brz.stat().st_size, brz_longest, "WubmasMusic.mcpack"))
         write_server_files(out, None if brz is not None else bp, lf if light_sets else None)
@@ -749,6 +778,9 @@ def main(argv=None):
     ap.add_argument("--java-split", action="store_true", help="make the Java pack with the left and the right channel apart (two mono sounds per piece), which the plugin plays from two speakers at the stage so the music fades with the distance. The default is one stereo sound per piece: the split layout can cancel the bass for a moment when the two sounds start a few milliseconds apart, so it is not used for the show. No long pieces with it")
     ap.add_argument("--java-stereo", action="store_true", help="the same as the default (one stereo sound per piece); kept so that older commands still work")
     ap.add_argument("--demo", action="store_true", help="build a 2 minute made-up sound check set instead of reading a folder (needs numpy)")
+    playlist = ap.add_mutually_exclusive_group()
+    playlist.add_argument("--test-playlist", default=None, help="JSON file listing the test_set_ids to package; default: the repository's test-playlist.json. DJ sets are always included")
+    playlist.add_argument("--all-test-tracks", action="store_true", help="include every full test song; makes a larger download for everyone")
     a = ap.parse_args(argv)
     try:
         if a.java_split and a.java_stereo: ap.error("--java-split and --java-stereo do not go together")
@@ -760,11 +792,12 @@ def main(argv=None):
             tmp = tempfile.mkdtemp(prefix="wubmas_demo_"); make_demo(tmp); a.sets = tmp
         if not a.sets: ap.error("give the folder with the set files (or --demo)")
         r = build(a.sets, a.out, kbps=a.kbps, piece=a.piece, overlap=a.overlap, lufs=a.lufs, normalize=not a.no_normalize, lineup_file=a.lineup, source=a.source, cap_mb=a.cap_mb,
-                  extra_lineup=[{"id": "soundcheck", "name": "Sound check", "start": "2026-01-01 12:00"}] if a.demo else None, demo=a.demo, pack_url=a.pack_url.strip(), bedrock_url=a.bedrock_url.strip(), version=a.version, strict_ids=a.strict_ids, short_min=a.short_minutes, stage_dir=a.stage_assets, lights=not a.no_lights, lights_url=a.lights_url.strip(), java_layout="split" if a.java_split else "stereo", long_piece=a.long_piece, catchup_kbps=a.catchup_kbps, bass_hz=a.bass_hz, bedrock_long_piece=a.bedrock_long_piece, bedrock_catchup_kbps=a.bedrock_catchup_kbps, bedrock_kbps=a.bedrock_kbps, bedrock_remote=a.bedrock_remote)
+                  extra_lineup=[{"id": "soundcheck", "name": "Sound check", "start": "2026-01-01 12:00"}] if a.demo else None, demo=a.demo, pack_url=a.pack_url.strip(), bedrock_url=a.bedrock_url.strip(), version=a.version, strict_ids=a.strict_ids, short_min=a.short_minutes, stage_dir=a.stage_assets, lights=not a.no_lights, lights_url=a.lights_url.strip(), java_layout="split" if a.java_split else "stereo", long_piece=a.long_piece, catchup_kbps=a.catchup_kbps, bass_hz=a.bass_hz, bedrock_long_piece=a.bedrock_long_piece, bedrock_catchup_kbps=a.bedrock_catchup_kbps, bedrock_kbps=a.bedrock_kbps, bedrock_remote=a.bedrock_remote,
+                  test_playlist=None if (a.all_test_tracks or a.demo) else (a.test_playlist or HERE.parent / "test-playlist.json"))
         if tmp: shutil.rmtree(tmp, ignore_errors=True)
     except ToolError as e:
         print("\nERROR: " + str(e), file=sys.stderr); return 1
-    say(); say(open(Path(a.out) / "REPORT.txt", encoding="utf-8").read())
+    say(); say((Path(a.out) / "REPORT.txt").read_text(encoding="utf-8"))
     return 0
 
 

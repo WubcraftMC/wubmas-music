@@ -54,7 +54,7 @@ def find_draft(items, name):
     return drafts[0], []            # GitHub lists the newest first
 
 
-MAX_FILES = 100          # everything in the draft ends up in the packs that every player downloads, and the build computer has about 14 GB of room
+MAX_FILES = 100          # all draft sources are downloaded before playlist selection; bound the build computer's disk use
 MAX_BYTES = 8_000_000_000
 
 
@@ -73,8 +73,8 @@ def fetch_draft(repo, name, dest, say=print, max_files=MAX_FILES, max_bytes=MAX_
     total = sum(int(a.get("size") or 0) for a in usable)
     if len(usable) > max_files or total > max_bytes:
         raise Fail(f'The draft release "{name}" has {len(usable)} music files ({total / 1e9:.1f} GB). The builder takes at most {max_files} files and {max_bytes / 1e9:g} GB, '
-                   "because every file in the draft ends up in the music packs that all players download (a 5 minute song adds about 2.5 MB, and the game does not accept a pack over 250 MB), "
-                   "and because GitHub's build computer has only about 14 GB of room. Nothing was downloaded. "
+                   "because source files are downloaded before the test playlist is selected, and GitHub's build computer has limited disk space. "
+                   "Only selected test songs and matched DJ sets go into the finished packs. Nothing was downloaded. "
                    "Take some files out of the draft (Releases, the one marked Draft, Edit, click the x next to a file, Save draft) and run the workflow again.")
     for a in usable:
         n = a.get("name", "")

@@ -1,11 +1,19 @@
 name: Build Wubmas music
 
-# Run it by hand: Actions tab, "Build Wubmas music", Run workflow. It also runs when lineup.json is edited (with the values below as they are).
+# Run it by hand: Actions tab, "Build Wubmas music", Run workflow. Editing lineup.json or test-playlist.json also builds the small playlist with the defaults below.
 # It takes the DJ files from the private draft release "Wubmas music files" (and the music/ folder, if there is one), turns them into the Java pack and
 # the Bedrock pack, finds the beats of every set for the stage lights (lights.txt), publishes them as a release called music-<number>, and keeps the newest three builds.
 on:
   workflow_dispatch:
     inputs:
+      test_tracks:
+        description: "Test song selection. Sample playlist uses test-playlist.json (six full songs); All songs includes the entire test library and makes a larger download. Scheduled DJ sets are always included."
+        required: true
+        type: choice
+        default: "Sample playlist"
+        options:
+          - "Sample playlist"
+          - "All songs"
       kbps:
         description: "Music quality in kbps. 64 is small and good for a game, 96 is better, 128 is large."
         required: true
@@ -29,6 +37,7 @@ on:
   push:
     paths:
       - "lineup.json"
+      - "test-playlist.json"
 
 concurrency:
   group: build-music
@@ -51,6 +60,7 @@ jobs:
       BEDROCK_LONG_PIECE: ${{ inputs.bedrock_long_piece || '30' }}
       BEDROCK_KBPS: ${{ inputs.bedrock_kbps || '48' }}
       RUN_NUMBER: ${{ github.run_number }}
+      TEST_TRACKS: ${{ inputs.test_tracks || 'Sample playlist' }}
     steps:
       - name: Get this repository
         uses: actions/checkout@v4
@@ -65,12 +75,17 @@ jobs:
       # one it has. The packs made by hand for the tests went up to the 30s, so the numbers here start at 101 (run 1) and go up with every run.
       - name: Build the packs
         run: |
+          case "$TEST_TRACKS" in
+            "Sample playlist") playlist_args=(--test-playlist test-playlist.json) ;;
+            "All songs") playlist_args=(--all-test-tracks) ;;
+            *) echo "Unknown test song selection: $TEST_TRACKS"; exit 1 ;;
+          esac
           python3 tool/make_music_packs.py sets --out build --lineup lineup.json --kbps "$KBPS" --piece "$PIECE" \
             --long-piece "$LONG_PIECE" --bedrock-long-piece "$BEDROCK_LONG_PIECE" --bedrock-kbps "$BEDROCK_KBPS" \
             --pack-url "https://github.com/$REPO/releases/download/$TAG/WubmasMusic-java.zip" \
             --bedrock-url "https://github.com/$REPO/releases/download/$TAG/WubmasMusic-bedrock.mcpack" \
             --lights-url "https://github.com/$REPO/releases/download/$TAG/lights.txt" \
-            --version "$((RUN_NUMBER + 100))"
+            --version "$((RUN_NUMBER + 100))" "${playlist_args[@]}"
 
       - name: Publish the release
         run: python3 scripts/publish_release.py "$REPO" "$TAG" build --target "${{ github.sha }}"
