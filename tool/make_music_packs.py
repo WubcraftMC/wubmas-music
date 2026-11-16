@@ -265,14 +265,17 @@ def java_pack(path, sets, desc, stage=(), layout="stereo"):
     return sounds
 
 
+BEDROCK_STREAM = False  # TEST BRANCH: False = the phone loads each sound whole before it plays (steady start time); True = it streams the file from storage while it plays (what the packs did until build 122)
+
+
 def bedrock_pack(path, sets, desc, category, version, key="wubmas-music", title="Wubmas Music"):
     defs, entries = {}, []
     for s in sets:
         for i in range(s["pieces"]):
-            defs[ev(s["id"], i)] = {"category": category, "sounds": [{"name": f"sounds/wubmas/{s['id']}/p{i:04d}", "stream": True, "volume": 1.0, "is3D": False}]}
+            defs[ev(s["id"], i)] = {"category": category, "sounds": [{"name": f"sounds/wubmas/{s['id']}/p{i:04d}", "stream": BEDROCK_STREAM, "volume": 1.0, "is3D": False}]}
             entries.append((f"sounds/wubmas/{s['id']}/p{i:04d}.ogg", s["files"][i]))
         for k, f in enumerate(s.get("files_blong") or []):
-            defs[ev_blong(s["id"], k)] = {"category": category, "sounds": [{"name": f"sounds/wubmas/{s['id']}/blong{k:04d}", "stream": True, "volume": 1.0, "is3D": False}]}
+            defs[ev_blong(s["id"], k)] = {"category": category, "sounds": [{"name": f"sounds/wubmas/{s['id']}/blong{k:04d}", "stream": BEDROCK_STREAM, "volume": 1.0, "is3D": False}]}
             entries.append((f"sounds/wubmas/{s['id']}/blong{k:04d}.ogg", f))
     manifest = {"format_version": 2,
                 "header": {"name": title, "description": desc, "uuid": str(uuid.uuid5(uuid.NAMESPACE_DNS, key + ".header.wubcraft")), "version": [1, 0, version], "min_engine_version": [1, 20, 0]},
