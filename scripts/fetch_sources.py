@@ -3,13 +3,14 @@
 
   fetch_sources.py REPO DEST [--draft "Wubmas music files"] [--folder music]
 
-1. The private DRAFT release called "Wubmas music files" of the repository: every audio file attached to it is downloaded. (A draft release is only
+1. The private DRAFT release called "Wubmas music files" of the repository: only audio credited to artists in music-artists.json is downloaded. (A draft release is only
    visible to people who can push to the repository, so the DJs' files are not public. Its files can be up to 2 GB each, and you add them by dragging
    them onto the release page in the browser.)
 2. The folder "music" of the repository, if it has one (for files that were added with git; they are public if the repository is).
 Needs the GitHub command line tool (gh) and GH_TOKEN in the environment, which GitHub Actions provides."""
 import argparse, json, os, re, subprocess, sys
 from pathlib import Path
+from music_policy import allowed_source
 
 AUDIO = {".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac", ".aif", ".aiff", ".opus", ".wma", ".mp4", ".mkv", ".webm"}
 SAFE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._ ()+\-]{0,200}")
@@ -69,6 +70,7 @@ def fetch_draft(repo, name, dest, say=print, max_files=MAX_FILES, max_bytes=MAX_
         if a.get("state") not in (None, "uploaded"): say(f"  skipped {n}: its upload is not finished"); continue
         if Path(n).suffix.lower() not in AUDIO: say(f"  skipped {n}: not an audio file"); continue
         if not SAFE_NAME.fullmatch(n): say(f"  skipped {n!r}: the name has characters I will not use as a file name"); continue
+        if not allowed_source(n): say(f"  skipped {n!r}: not credited to an artist in music-artists.json"); continue
         usable.append(a)
     total = sum(int(a.get("size") or 0) for a in usable)
     if len(usable) > max_files or total > max_bytes:
@@ -92,6 +94,7 @@ def copy_folder(folder, dest, say=print):
     if not f.is_dir(): return got
     for p in sorted(f.iterdir()):
         if p.is_file() and p.suffix.lower() in AUDIO and not p.name.startswith("."):
+            if not allowed_source(p.name): say(f"  skipped {p.name!r}: not credited to an artist in music-artists.json"); continue
             t = Path(dest) / p.name
             if t.exists(): say(f"  {p.name}: the draft release has a file with this name already, so the one in the {folder} folder is ignored"); continue
             t.write_bytes(p.read_bytes()); got.append(t); say(f"  {p.name}  ({t.stat().st_size / 1e6:.1f} MB) from the {folder} folder")
@@ -107,7 +110,7 @@ def main(argv=None):
         print(f'Looking for the draft release "{a.draft}" ...')
         got = fetch_draft(a.repo, a.draft, a.dest)
         got += copy_folder(a.folder, a.dest)
-    except Fail as e:
+    except (Fail, OSError, ValueError) as e:
         fail_text(str(e)); return 1
     if not got:
         fail_text(f'There is no music to build. Put the sets (dxbuddha.mp3, yungsiete.mp3 ...) in a draft release called "{a.draft}" (Releases, Draft a new release, drag the files in, Save draft), then run this again.')
