@@ -23,7 +23,17 @@ def artist_pattern():
 
 
 def allowed_source(name):
-    return bool(artist_pattern().search(Path(name).stem))
+    pattern = artist_pattern()
+    data = json.loads(POLICY.read_text(encoding="utf-8"))
+    approved = data.get("approved_sources", {})
+    if not isinstance(approved, dict):
+        raise ValueError("approved_sources must map exact filenames to kept artists.")
+    for filename, artist in approved.items():
+        if not isinstance(filename, str) or not filename or Path(filename).name != filename or "\\" in filename:
+            raise ValueError("Each approved source must be an exact filename without folders.")
+        if not isinstance(artist, str) or not pattern.fullmatch(artist):
+            raise ValueError("Each approved source must belong to an artist in keep_artists.")
+    return bool(pattern.search(Path(name).stem)) or Path(name).name.casefold() in {filename.casefold() for filename in approved}
 
 
 def pending_source(name):
