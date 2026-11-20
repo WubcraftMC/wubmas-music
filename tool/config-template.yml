@@ -124,6 +124,12 @@ lights:
   break-seconds: 10
   max-cues-per-second: 6           # beat, bar and phrase cues together; 1 to 20 (the gaps above keep it near 3.5)
   min-tps: 17                      # the lights pause while the server runs slower than this many ticks a second, so they never add work to a server that is behind; 0 = never
+  # The hold (1.23.0): when somebody changes the colour by hand (flips a lever or presses a button within hold-radius blocks of the stage point, types a ControlRoom colour command, or runs
+  # /wubmusic lights hold), the show sends no colour command for hold-seconds, so the colour they chose stays. Movements, strobes and everything else go on. Then the show's colour comes back by itself.
+  # /wubmusic lights hold [seconds] starts one yourself, /wubmusic lights hold off ends it now. hold-auto: false = only that command starts one. (Levers and buttons need a stage point: /wubmusic stage set.)
+  hold-seconds: 60                 # 5 to 900
+  hold-auto: true
+  hold-radius: 80                  # blocks from the stage point, 5 to 500
   palette: [red, magenta, purple, blue, cyan, light_blue, lime, orange]
   effects: [sweep, wave, fan, circle, figure8, diamond]
   cues:
