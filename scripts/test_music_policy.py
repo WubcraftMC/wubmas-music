@@ -39,16 +39,23 @@ class MusicPolicyTests(unittest.TestCase):
                         music_policy.allowed_source('infrno.wav')
 
     def test_cleanup_only_removes_unselected_source_audio(self):
-        assets = [{'id':1, 'name':'ILLENIUM.mp3'}, {'id':2, 'name':'NGHTOUT.wav'},
+        assets = [{'id':1, 'name':'Doil.-.ARMY.OF.THE.DEAD.wav'}, {'id':2, 'name':'NGHTOUT.wav'},
                   {'id':3, 'name':'cover.png'}, {'id':4, 'name':'WubmasMusic-java.zip'},
                   {'id':7, 'name':'Freak.Full.song.wav'}]
         releases = [{'draft':True, 'name':'Wubmas music files', 'assets':assets},
                     {'draft':True, 'name':'Unrelated draft', 'assets':[{'id':5,'name':'other.wav'}]},
-                    {'draft':False, 'assets':[{'id':6,'name':'SLANDER.mp3'}]}]
+                    {'draft':False, 'assets':[{'id':6,'name':'IKARUS.-.GHAUL.wav'}]}]
         with patch.object(clean_music, 'all_releases', return_value=releases), patch.object(clean_music, 'api') as api:
             clean_music.clean_sources('owner/repo')
         self.assertEqual([1,6], [call.args[1] for call in api.call_args_list])
         self.assertTrue(all(c.args[2] == 'DELETE' for c in api.call_args_list))
+
+    def test_future_dj_uploads_are_not_deleted(self):
+        releases=[{'draft':True,'name':'Wubmas music files','assets':[
+            {'id':80,'name':'DxBuddha - WUBMAS final set.wav'},
+            {'id':81,'name':'James V - Original.wav'},
+            {'id':82,'name':'new uncredited track.wav'}]}]
+        self.assertEqual([],clean_music.source_removals(releases))
 
     def test_uncredited_pending_track_is_preserved_but_not_packaged(self):
         self.assertTrue(music_policy.pending_source('Freak.Full.song.wav'))
