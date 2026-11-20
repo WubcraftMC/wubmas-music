@@ -6,7 +6,8 @@
     "INFRNO",
     "Yung Siete"
   ],
-  "pending_sources": [
-    "Freak.Full.song.wav"
-  ]
+  "approved_sources": {
+    "Freak.Full.song.wav": "INFRNO"
+  },
+  "pending_sources": []
 }
