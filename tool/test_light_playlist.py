@@ -74,7 +74,7 @@ class PlaylistTests(unittest.TestCase):
         doc = yaml.load(workflow.read_text(), Loader=yaml.BaseLoader)
         inputs = doc['on']['workflow_dispatch']['inputs']; job = doc['jobs']['build']
         self.assertEqual(['Sample playlist', 'All songs'], inputs['test_tracks']['options'])
-        self.assertEqual('Sample playlist', inputs['test_tracks']['default'])
+        self.assertEqual('All songs', inputs['test_tracks']['default'])
         self.assertIn('test-playlist.json', doc['on']['push']['paths'])
         defaults = {'kbps': '64', 'piece': '2', 'long_piece': '120', 'bedrock_long_piece': '30', 'bedrock_kbps': '48'}
         for name, value in defaults.items(): self.assertEqual(value, inputs[name]['default'])

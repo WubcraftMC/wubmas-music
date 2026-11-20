@@ -265,14 +265,33 @@ def java_pack(path, sets, desc, stage=(), layout="stereo"):
     return sounds
 
 
+# Sound modes, for finding out what a phone plays best without a new pack for every try: the very same .ogg files again under other event names ("wubmasb.<set>.p0000"
+# instead of "wubmas.<set>.p0000"), with other settings. Mode a is the usual one (the plain "wubmas." names, streamed, in the category the pack was built with) and is
+# unchanged. The plugin sends the names of the chosen mode to Bedrock players only: /wubmusic bedrock mode a|b|c|d (WubmasMusic 1.22.0 or newer). Costs no audio bytes, only a few definitions.
+BEDROCK_MODES = {
+    "b": {"category": "music"},      # the same pieces as the "music" sound type (its own volume slider, and the game treats it as music)
+    "c": {"category": "ui"},         # as the "ui" sound type (the game keeps these apart from the world's sounds)
+    "d": {"stream": False},          # the usual category, but each sound is loaded whole before it plays instead of streamed from the pack
+}
+
+
+def mode_ev(mode, event): return "wubmas" + mode + event[len("wubmas"):]
+
+
 def bedrock_pack(path, sets, desc, category, version, key="wubmas-music", title="Wubmas Music"):
     defs, entries = {}, []
+
+    def add(event, sound):
+        defs[event] = {"category": category, "sounds": [{"name": sound, "stream": True, "volume": 1.0, "is3D": False}]}
+        for m, spec in BEDROCK_MODES.items():
+            defs[mode_ev(m, event)] = {"category": spec.get("category", category), "sounds": [{"name": sound, "stream": spec.get("stream", True), "volume": 1.0, "is3D": False}]}
+
     for s in sets:
         for i in range(s["pieces"]):
-            defs[ev(s["id"], i)] = {"category": category, "sounds": [{"name": f"sounds/wubmas/{s['id']}/p{i:04d}", "stream": True, "volume": 1.0, "is3D": False}]}
+            add(ev(s["id"], i), f"sounds/wubmas/{s['id']}/p{i:04d}")
             entries.append((f"sounds/wubmas/{s['id']}/p{i:04d}.ogg", s["files"][i]))
         for k, f in enumerate(s.get("files_blong") or []):
-            defs[ev_blong(s["id"], k)] = {"category": category, "sounds": [{"name": f"sounds/wubmas/{s['id']}/blong{k:04d}", "stream": True, "volume": 1.0, "is3D": False}]}
+            add(ev_blong(s["id"], k), f"sounds/wubmas/{s['id']}/blong{k:04d}")
             entries.append((f"sounds/wubmas/{s['id']}/blong{k:04d}.ogg", f))
     manifest = {"format_version": 2,
                 "header": {"name": title, "description": desc, "uuid": str(uuid.uuid5(uuid.NAMESPACE_DNS, key + ".header.wubcraft")), "version": [1, 0, version], "min_engine_version": [1, 20, 0]},

@@ -7,10 +7,10 @@ on:
   workflow_dispatch:
     inputs:
       test_tracks:
-        description: "Test song selection. Sample playlist uses test-playlist.json (six full songs); All songs includes the entire test library and makes a larger download. Scheduled DJ sets are always included."
+        description: "All songs includes saved music credited to artists in music-artists.json. Sample playlist uses test-playlist.json. Matched DJ sets are always included."
         required: true
         type: choice
-        default: "Sample playlist"
+        default: "All songs"
         options:
           - "Sample playlist"
           - "All songs"
@@ -35,9 +35,12 @@ on:
         required: true
         default: "48"
   push:
+    branches:
+      - "main"
     paths:
       - "lineup.json"
       - "test-playlist.json"
+      - "music-artists.json"
 
 concurrency:
   group: build-music
@@ -60,10 +63,13 @@ jobs:
       BEDROCK_LONG_PIECE: ${{ inputs.bedrock_long_piece || '30' }}
       BEDROCK_KBPS: ${{ inputs.bedrock_kbps || '48' }}
       RUN_NUMBER: ${{ github.run_number }}
-      TEST_TRACKS: ${{ inputs.test_tracks || 'Sample playlist' }}
+      TEST_TRACKS: ${{ inputs.test_tracks || 'All songs' }}
     steps:
       - name: Get this repository
         uses: actions/checkout@v4
+
+      - name: Remove music outside the selected artists
+        run: python3 scripts/clean_music.py "$REPO" --sources
 
       - name: Install ffmpeg
         run: sudo apt-get update -y && sudo apt-get install -y --no-install-recommends ffmpeg
@@ -89,3 +95,7 @@ jobs:
 
       - name: Publish the release
         run: python3 scripts/publish_release.py "$REPO" "$TAG" build --target "${{ github.sha }}"
+
+      # A replacement pack is public before retiring the inventoried old packs.
+      - name: Retire old mixed music packs
+        run: python3 scripts/clean_music.py "$REPO" --old-packs
