@@ -58,22 +58,41 @@ class MusicPolicyTests(unittest.TestCase):
         self.assertEqual([],clean_music.source_removals(releases))
 
     def test_uncredited_pending_track_is_preserved_but_not_packaged(self):
-        self.assertTrue(music_policy.pending_source('Freak.Full.song.wav'))
-        self.assertFalse(music_policy.allowed_source('Freak.Full.song.wav'))
+        with tempfile.TemporaryDirectory() as td:
+            path=Path(td)/'policy.json'
+            path.write_text(json.dumps({'keep_artists':['INFRNO'],'pending_sources':['Pending.track.wav']}))
+            with patch.object(music_policy,'POLICY',path):
+                self.assertTrue(music_policy.pending_source('Pending.track.wav'))
+                self.assertFalse(music_policy.allowed_source('Pending.track.wav'))
+
+    def test_confirmed_owner_track_uses_exact_filename(self):
+        self.assertTrue(music_policy.allowed_source('Freak.Full.song.wav'))
+        self.assertTrue(music_policy.allowed_source('FREAK.FULL.SONG.WAV'))
+        self.assertFalse(music_policy.pending_source('Freak.Full.song.wav'))
+        self.assertFalse(music_policy.allowed_source('Another Freak.Full.song.wav'))
+        self.assertFalse(music_policy.allowed_source('Freak.Full.song.mp3'))
+
+    def test_invalid_explicit_approvals_are_rejected(self):
+        with tempfile.TemporaryDirectory() as td:
+            path=Path(td)/'policy.json'
+            for approved in [[],{'Foreign.wav':'ILLENIUM'},{'../Freak.wav':'INFRNO'},{'':'INFRNO'}]:
+                with self.subTest(approved=approved),patch.object(music_policy,'POLICY',path):
+                    path.write_text(json.dumps({'keep_artists':['INFRNO'],'approved_sources':approved}))
+                    with self.assertRaises(ValueError):music_policy.allowed_source('Foreign.wav')
 
     def test_fetch_filters_before_limits_and_download(self):
-        assets = [{'id':1, 'name':'ILLENIUM.mp3', 'size':10**10},
-                  {'id':2, 'name':'infrno.wav', 'size':2}]
-        releases = [{'draft':True, 'name':'Wubmas music files', 'assets':assets}]
         def download(args, to_file=None):
             self.assertTrue(args[-1].endswith('/2'))
             to_file.write(b'ok')
-        with tempfile.TemporaryDirectory() as td, patch.object(fetch_sources, 'all_releases', return_value=releases), patch.object(fetch_sources, 'gh', side_effect=download) as gh:
-            got = fetch_sources.fetch_draft('owner/repo', 'Wubmas music files', td,
-                                           say=lambda *_:None, max_files=1, max_bytes=2)
-            self.assertEqual(['infrno.wav'], [p.name for p in got])
-            self.assertEqual(b'ok', got[0].read_bytes())
-            self.assertEqual(1, gh.call_count)
+        for name in ['infrno.wav','Freak.Full.song.wav']:
+            assets=[{'id':1,'name':'ILLENIUM.mp3','size':10**10},{'id':2,'name':name,'size':2}]
+            releases=[{'draft':True,'name':'Wubmas music files','assets':assets}]
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as td, patch.object(fetch_sources, 'all_releases', return_value=releases), patch.object(fetch_sources, 'gh', side_effect=download) as gh:
+                got = fetch_sources.fetch_draft('owner/repo', 'Wubmas music files', td,
+                                               say=lambda *_:None, max_files=1, max_bytes=2)
+                self.assertEqual([name], [p.name for p in got])
+                self.assertEqual(b'ok', got[0].read_bytes())
+                self.assertEqual(1, gh.call_count)
 
     def test_repo_music_folder_uses_same_filter(self):
         with tempfile.TemporaryDirectory() as td:
