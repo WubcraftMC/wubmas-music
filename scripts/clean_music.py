@@ -24,6 +24,14 @@ OLD_PACKS = {
     728952107: "WubmasMusicDemo-java.zip",
 }
 
+# One-time removal inventory. Future uploads are filtered, not silently deleted.
+OLD_SOURCES = {
+    "Doil.-.ARMY.OF.THE.DEAD.wav",
+    "Doil.-.LET.HIM.IN.wav",
+    "IKARUS.-.GHAUL.wav",
+    "LUGH.-.WATCH.YO.MOUTH.wav",
+}
+
 
 def api(repo, asset_id, method="GET", missing_ok=False):
     endpoint = f"repos/{repo}/releases/assets/{int(asset_id)}"
@@ -44,7 +52,7 @@ def source_removals(releases):
             continue
         for asset in release.get("assets") or []:
             name = asset.get("name", "")
-            if Path(name).suffix.casefold() in AUDIO and not allowed_source(name) and not pending_source(name):
+            if name in OLD_SOURCES and Path(name).suffix.casefold() in AUDIO and not allowed_source(name) and not pending_source(name):
                 result.append(asset)
     return result
 
