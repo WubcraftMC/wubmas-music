@@ -259,18 +259,21 @@ def thin_hits(hits, gap_ms=HIT_GAP_MS):
     return list(reversed(out))
 
 
-def build_hits(fine, grid_tokens):
-    """Hit tokens, outside [break, drop) intervals, then safely spaced.
-    Filter breaks before scheduling so a discarded hit cannot crowd out one
-    just before a break or just after a drop. An unclosed break lasts to EOF.
+def build_hits(fine, grid_tokens, peaks=None):
+    """Actual bass onsets remain authoritative even when the estimated beat grid calls a section a break.
+    Silence has no onset peaks. A grid-derived K must never erase audible syncopated bass for an entire section.
+    The 400 ms scheduling floor still applies to the whole hit list, including break boundaries.
     """
-    structural = [(t, k) for t, k in grid_tokens if k in "KD"]
-    candidates, j, inside = [], 0, False
-    for t, s in hit_peaks(fine):
-        while j < len(structural) and structural[j][0] <= t:
-            inside = structural[j][1] == "K"; j += 1
-        if not inside: candidates.append((t, s))
-    return [(t, "H" if s >= LEVEL_EDGES[2] else "h") for t, s in thin_hits(candidates)]
+    return [(t, "H" if s >= LEVEL_EDGES[2] else "h") for t, s in thin_hits(hit_peaks(fine) if peaks is None else peaks)]
+
+
+def supported_breaks(times, breaks, fine, peaks=None):
+    """Reject grid breaks whose first 3 s still contain at least three safely spaced bass hits.
+    Keep genuine quiet breaks. This is a conservative cross-check of a musical label, not an additional hit detector.
+    """
+    hits = thin_hits(hit_peaks(fine) if peaks is None else peaks)
+    ts = [t for t, _ in hits]
+    return [i for i in breaks if bisect_left(ts, times[i] + 3000) - bisect_left(ts, times[i]) < 3]
 
 
 # ------------------------------------------------------------------ levels, breaks, drops
@@ -433,6 +436,10 @@ def analyze(src, ffmpeg=default_ffmpeg):
     breaks_a, drops_a = sections(lv)
     breaks_b, drops_b = energy_events(times, el, med)
     breaks, drops = thin_events(merge_events(breaks_a, breaks_b), merge_events(drops_a, drops_b))
+    actual_hits = hit_peaks(fine)
+    supported = supported_breaks(times, breaks, fine, actual_hits)
+    if len(supported) < len(breaks): warnings.append(f"{len(breaks) - len(supported)} grid break(s) ignored because actual bass hits continue")
+    breaks = supported
     inside, last_k = set(), None       # the beats of a break are not a rhythm to follow: no new bar count starts in one
     for i, k in sorted([(i, "K") for i in breaks] + [(i, "D") for i in drops]):
         if k == "K": last_k = i
@@ -445,7 +452,7 @@ def analyze(src, ffmpeg=default_ffmpeg):
     tokens = build_tokens(times, lv, breaks, drops, jumps, inside)
     # Stable sort: structural cues, phrases and grid bars precede a hit at the
     # same time, so holds and the bar's current colour are already in place.
-    tokens = sorted(tokens + build_hits(fine, tokens), key=lambda x: x[0])
+    tokens = sorted(tokens + build_hits(fine, tokens, actual_hits), key=lambda x: x[0])
     steady = periodicity(onset)
     kicks = sum(1 for v in lv if v >= 2)
     if steady < 0.09 and not warnings: warnings.append("no steady beat in this one (it may be speech or noise): the lights may drift against the music")

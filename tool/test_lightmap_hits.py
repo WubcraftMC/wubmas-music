@@ -65,15 +65,30 @@ class HitTests(unittest.TestCase):
                 self.assertEqual(best, sum(s for _, s in chosen))
                 self.assertTrue(all(b[0] - a[0] >= 400 for a, b in zip(chosen, chosen[1:])))
 
-    def test_break_boundaries_and_unclosed_break(self):
+    def test_grid_break_cannot_erase_real_bass_hits(self):
         hits = [(900, 1.0), (1000, 1.0), (1500, 1.0), (1999, 1.0), (2000, 1.0), (2500, 1.0), (3000, 1.0), (3500, 1.0)]
         with patch.object(lm, 'hit_peaks', return_value=hits):
-            self.assertEqual([(900, 'H'), (2000, 'H'), (2500, 'H')],
-                             lm.build_hits([], [(1000, 'K'), (2000, 'D'), (3000, 'K')]))
+            self.assertEqual(lm.build_hits([], []), lm.build_hits([], [(1000, 'K'), (2000, 'D'), (3000, 'K')]))
+            self.assertTrue(any(t >= 3000 for t, _ in lm.build_hits([], [(1000, 'K')])) )
 
-    def test_break_filter_precedes_scheduling(self):
+    def test_louder_real_hit_inside_grid_break_is_retained(self):
         with patch.object(lm, 'hit_peaks', return_value=[(900, 0.6), (1000, 2.0), (2000, 0.6)]):
-            self.assertEqual([(900, 'h'), (2000, 'h')], lm.build_hits([], [(1000, 'K'), (2000, 'D')]))
+            self.assertEqual([(1000, 'H'), (2000, 'h')], lm.build_hits([], [(1000, 'K'), (2000, 'D')]))
+
+    def test_break_labels_are_cross_checked_against_real_onsets(self):
+        times = [1000, 6000, 12000]
+        peaks = [(1100, 1), (1600, 1), (2100, 1), (6100, 1), (12500, 1), (14000, 1)]
+        self.assertEqual([1, 2], lm.supported_breaks(times, [0, 1, 2], [], peaks))
+        self.assertEqual([0, 1, 2], lm.supported_breaks(times, [0, 1, 2], [], []))
+
+    def test_nghtout_recording_false_break_regression(self):
+        # The uploaded recording matches this section: the old map called 56.032--89.623 s a break despite dense bass onsets.
+        peaks = [(80660 + t, .9) for t in (63, 418, 895, 2580, 2962, 3534, 4217, 4523, 4960, 5324, 5817, 6123, 6761, 6924, 7396, 7723, 8158)]
+        with patch.object(lm, 'hit_peaks', return_value=peaks):
+            old_labels = [(56032, 'K'), (89623, 'D')]
+            result = lm.build_hits([], old_labels)
+            self.assertEqual(10, len(result))
+            self.assertTrue(all(b[0] - a[0] >= 400 for a, b in zip(result, result[1:])))
 
     def test_map_roundtrip_old_and_new(self):
         results = {'test': {'seconds': 10.0, 'bpm': 120.0, 'tokens': [(1000, 'D'), (1000, 'P'), (1000, 'B'), (1000, 'H'), (1500, 'h')]}}
